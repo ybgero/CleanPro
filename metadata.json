@@ -1,0 +1,5 @@
+{
+  "name": "CleanSheet Pro",
+  "description": "Advanced data cleaning utility with multi-file support, folder selection, and cloud integration (Google Drive, SharePoint).",
+  "requestFramePermissions": []
+}
