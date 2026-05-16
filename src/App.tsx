@@ -223,33 +223,60 @@ export default function App() {
           Papa.parse(file, {
             header: true,
             dynamicTyping: true,
-            complete: (results) => resolve(results.data),
+            skipEmptyLines: true,
+            complete: (results) => {
+              const data = results.data.filter((row: any) => Object.keys(row).some(key => row[key] !== null && row[key] !== undefined && row[key] !== ""));
+              resolve(data);
+            },
             error: (err) => reject(err)
           });
         } else if (ext === "xlsx" || ext === "xls") {
           reader.onload = (e) => {
-            const data = new Uint8Array(e.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: "array" });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            resolve(XLSX.utils.sheet_to_json(firstSheet));
+            try {
+              const data = new Uint8Array(e.target?.result as ArrayBuffer);
+              const workbook = XLSX.read(data, { type: "array" });
+              const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+              const parsed = XLSX.utils.sheet_to_json(firstSheet);
+              resolve(parsed.filter((row: any) => Object.keys(row).some(key => row[key] !== null && row[key] !== undefined && row[key] !== "")));
+            } catch (err) {
+              reject(err);
+            }
           };
+          reader.onerror = () => reject(new Error("Failed to read Excel file"));
           reader.readAsArrayBuffer(file);
         } else if (ext === "json") {
           reader.onload = (e) => {
             try {
-              resolve(JSON.parse(e.target?.result as string));
+              const parsed = JSON.parse(e.target?.result as string);
+              const data = Array.isArray(parsed) ? parsed : [parsed];
+              resolve(data.filter((row: any) => typeof row === 'object' && Object.keys(row).some(key => row[key] !== null && row[key] !== undefined && row[key] !== "")));
             } catch (err) { reject(err); }
           };
+          reader.onerror = () => reject(new Error("Failed to read JSON file"));
           reader.readAsText(file);
         } else if (ext === "yaml" || ext === "yml") {
           reader.onload = (e) => {
             try {
-              resolve(yaml.load(e.target?.result as string) as any[]);
+              const parsed = yaml.load(e.target?.result as string);
+              const data = Array.isArray(parsed) ? parsed : [parsed];
+              resolve(data.filter((row: any) => typeof row === 'object' && Object.keys(row).some(key => row[key] !== null && row[key] !== undefined && row[key] !== "")));
             } catch (err) { reject(err); }
           };
+          reader.onerror = () => reject(new Error("Failed to read YAML file"));
+          reader.readAsText(file);
+        } else if (ext === "txt") {
+          reader.onload = (e) => {
+            try {
+              const text = e.target?.result as string;
+              const lines = text.split('\n').filter(line => line.trim());
+              const data = lines.map((line, idx) => ({ line_number: idx + 1, content: line }));
+              resolve(data);
+            } catch (err) { reject(err); }
+          };
+          reader.onerror = () => reject(new Error("Failed to read TXT file"));
           reader.readAsText(file);
         } else {
-          reject(new Error("Unsupported file type"));
+          reject(new Error(`Unsupported file type: .${ext}`));
         }
       });
 
