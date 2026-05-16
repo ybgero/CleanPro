@@ -1,53 +1,75 @@
 import React, { useState, useCallback, useMemo } from "react";
-import { 
-  Upload, 
-  FileText, 
-  Trash2, 
-  Download, 
-  Settings2, 
-  History, 
-  CheckCircle2, 
-  AlertCircle, 
-  ChevronRight, 
+import { Editor } from "@monaco-editor/react";
+import {
+  Upload,
+  FileText,
+  Trash2,
+  Download,
+  Settings2,
+  History,
+  CheckCircle2,
+  AlertCircle,
+  ChevronRight,
   FileSpreadsheet,
   Database,
   RefreshCw,
-  X
+  X,
+  Sparkles,
+  ShieldCheck,
+  Cpu,
+  ArrowRight,
+  ArrowDown,
+  Columns,
+  Zap,
+  Search,
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import yaml from "js-yaml";
 import { cn } from "./lib/utils";
-import { 
-  CleaningConfig, 
-  FileData, 
-  RunHistory, 
-  NullOption, 
-  BlankOption, 
-  ZeroOption, 
-  DuplicateOption 
+import {
+  CleaningConfig,
+  FileData,
+  RunHistory,
+  NullOption,
+  BlankOption,
+  ZeroOption,
+  DuplicateOption,
 } from "./types";
+
+interface Transformation {
+  id: string;
+  column: string;
+  operation: string;
+  value: string;
+}
+
+const transformationOptions = [
+  { value: "fill_nulls", label: "Fill nulls with median" },
+  { value: "drop_nulls", label: "Drop rows with nulls" },
+  { value: "trim_whitespace", label: "Trim whitespace" },
+  { value: "standardize_case", label: "Standardize case" },
+  { value: "remove_duplicates", label: "Remove duplicate rows" },
+];
+
+const navItems = [
+  { id: "datasets", label: "Datasets", icon: Database },
+  { id: "transformations", label: "Transformations", icon: Settings2 },
+  { id: "history", label: "Query History", icon: History },
+  { id: "insights", label: "AI Insights", icon: Sparkles },
+  { id: "export", label: "Export Options", icon: Download },
+];
 
 export default function App() {
   const [files, setFiles] = useState<FileData[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
-  const [history, setHistory] = useState<RunHistory[]>([]);
-  const [config, setConfig] = useState<CleaningConfig>({
-    nulls: "leave",
-    blanks: "leave",
-    zeros: "leave",
-    duplicates: "keep",
-  });
-  const [isCleaning, setIsCleaning] = useState(false);
+  const [selectedColumn, setSelectedColumn] = useState<string | null>(null);
+  const [transformations, setTransformations] = useState<Transformation[]>([
+    { id: "t1", column: "", operation: "fill_nulls", value: "" },
+  ]);
   const [sourceType, setSourceType] = useState<"upload" | "db">("upload");
-  const [showConnectorModal, setShowConnectorModal] = useState(false);
-
-  const selectedFile = useMemo(() => 
-    files.find(f => f.id === selectedFileId), 
-    [files, selectedFileId]
-  );
-
+  const [showSidebar, setShowSidebar] = useState(true);
   const [dbConnector, setDbConnector] = useState("aws-redshift");
   const [dbHost, setDbHost] = useState("");
   const [dbPort, setDbPort] = useState("");
@@ -55,50 +77,86 @@ export default function App() {
   const [dbSchema, setDbSchema] = useState("");
   const [dbUser, setDbUser] = useState("");
   const [dbPassword, setDbPassword] = useState("");
-  const [dbQuery, setDbQuery] = useState("SELECT * FROM table_name LIMIT 100");
+  const [dbQuery, setDbQuery] = useState("SELECT * FROM table_name LIMIT 100;");
   const [dbPreview, setDbPreview] = useState<any[] | null>(null);
   const [isDbLoading, setIsDbLoading] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [isSqlRunning, setIsSqlRunning] = useState(false);
+  const [sqlStatus, setSqlStatus] = useState("Ready");
 
-  const dbConnectors = useMemo(() => [
-    { id: "aws-redshift", label: "AWS Redshift" },
-    { id: "azure-synapse", label: "Azure Synapse" },
-    { id: "snowflake", label: "Snowflake" },
-    { id: "google-bigquery", label: "Google BigQuery" },
-    { id: "postgresql", label: "PostgreSQL" },
-    { id: "mysql", label: "MySQL" },
-    { id: "sql-server", label: "SQL Server" },
-    { id: "oracle", label: "Oracle" },
-    { id: "mongodb", label: "MongoDB" },
-    { id: "databricks", label: "Databricks" },
-  ], []);
+  const selectedFile = useMemo(
+    () => files.find((file) => file.id === selectedFileId) || null,
+    [files, selectedFileId]
+  );
 
-  const sourceOptions = useMemo(() => [
-    { id: "upload", label: "Upload Files" },
-    ...dbConnectors,
-  ], [dbConnectors]);
+  const columns = useMemo(() => {
+    if (!selectedFile) return [];
+    return Object.keys(selectedFile.data[0] || {});
+  }, [selectedFile]);
 
-  const currentSourceLabel = useMemo(() => {
-    const selected = sourceOptions.find(option => option.id === (sourceType === "upload" ? "upload" : dbConnector));
-    return selected?.label || "Upload Files";
-  }, [sourceOptions, sourceType, dbConnector]);
+  const activeDatasetName = selectedFile?.name ?? "No dataset loaded";
+  const rowCount = selectedFile?.metadata.rows ?? 0;
+
+  const qualityScore = useMemo(() => {
+    if (!selectedFile) return 0;
+    const penalty = selectedFile.metadata.nullCount * 1.2 + selectedFile.metadata.blankCount * 0.8;
+    const score = 100 - Math.min(70, penalty);
+    return Math.max(26, Math.round(score));
+  }, [selectedFile]);
+
+  const computeSeverity = (count: number, total = rowCount) => {
+    if (!total) return "Low";
+    const pct = Math.round((count / total) * 100);
+    if (pct > 15) return "High";
+    if (pct > 6) return "Medium";
+    return "Low";
+  };
+
+  const insights = useMemo(() => {
+    if (!selectedFile) return ["Import a dataset and the workspace will generate insights."];
+
+    const notes: string[] = [];
+    const missingPct = Math.round((selectedFile.metadata.nullCount / Math.max(1, selectedFile.metadata.rows)) * 100);
+    const duplicatePct = Math.round(
+      ((selectedFile.metadata.rows - selectedFile.metadata.uniqueCount) / Math.max(1, selectedFile.metadata.rows)) * 100
+    );
+
+    if (missingPct >= 10) {
+      notes.push(`${missingPct}% of rows contain missing values in the current dataset.`);
+    } else {
+      notes.push(`Missing values are at ${missingPct}%, within acceptable range.`);
+    }
+
+    if (duplicatePct >= 5) {
+      notes.push(`${duplicatePct}% of records are potential duplicates.`);
+    } else {
+      notes.push(`Duplicate risk is low at ${duplicatePct}%.`);
+    }
+
+    if (selectedFile.metadata.cols >= 8) {
+      notes.push(`The dataset includes ${selectedFile.metadata.cols} fields, including multiple categorical and numeric dimensions.`);
+    }
+    notes.push("Use the SQL workspace to validate source queries before profile and transform.");
+    return notes;
+  }, [selectedFile]);
 
   const handleSourceChange = useCallback((value: string) => {
     if (value === "upload") {
       setSourceType("upload");
-      setShowConnectorModal(false);
-    } else {
-      setSourceType("db");
-      setDbConnector(value);
-      setShowConnectorModal(true);
+      setShowSidebar(true);
+      return;
     }
+
+    setSourceType("db");
+    setDbConnector(value);
   }, []);
 
   const handleDbPreview = useCallback(async () => {
     setIsDbLoading(true);
     try {
-      const response = await fetch('/api/db/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/db/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           connector: dbConnector,
           host: dbHost,
@@ -113,19 +171,14 @@ export default function App() {
       const result = await response.json();
       setDbPreview(result.data || []);
     } catch (err) {
-      console.error('Database preview failed', err);
+      console.error("Database preview failed", err);
       setDbPreview([]);
     } finally {
       setIsDbLoading(false);
     }
   }, [dbConnector, dbHost, dbPort, dbDatabase, dbSchema, dbUser, dbPassword, dbQuery]);
 
-  const handleSourceSelectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    handleSourceChange(e.target.value);
-  };
-
-
-  const handleDbImport = () => {
+  const handleDbImport = useCallback(() => {
     if (!dbPreview || !dbPreview.length) return;
     const metadata = calculateMetadata(dbPreview);
     if (!metadata) return;
@@ -134,16 +187,16 @@ export default function App() {
     const newFile = {
       id: fileId,
       name: `${dbConnector}-preview.csv`,
-      type: 'application/json',
+      type: "application/json",
       data: dbPreview,
       originalData: [...dbPreview],
       metadata,
     };
 
-    setFiles(prev => [...prev, newFile]);
+    setFiles((prev) => [...prev, newFile]);
     setSelectedFileId(fileId);
     setDbPreview(null);
-  };
+  }, [dbConnector, dbPreview]);
 
   const calculateMetadata = (data: any[]) => {
     if (!data.length) return null;
@@ -151,14 +204,15 @@ export default function App() {
     const columnStats: Record<string, any> = {};
     let totalNulls = 0;
     let totalBlanks = 0;
+    const uniqueRows = new Set<string>();
 
-    cols.forEach(col => {
+    cols.forEach((col) => {
       let nulls = 0;
       let blanks = 0;
-      const uniques = new Set();
+      const uniques = new Set<any>();
       let isNumeric = true;
 
-      data.forEach(row => {
+      data.forEach((row) => {
         const val = row[col];
         if (val === null || val === undefined || val === "") {
           nulls++;
@@ -168,9 +222,10 @@ export default function App() {
           blanks++;
           totalBlanks++;
         }
+
         if (val !== null && val !== undefined) {
           uniques.add(val);
-          if (isNaN(Number(val)) && typeof val !== "number") {
+          if (typeof val !== "number" && isNaN(Number(val))) {
             isNumeric = false;
           }
         }
@@ -180,8 +235,12 @@ export default function App() {
         nulls,
         blanks,
         uniques: uniques.size,
-        type: isNumeric ? "numeric" : "string"
+        type: isNumeric ? "numeric" : "string",
       };
+    });
+
+    data.forEach((row) => {
+      uniqueRows.add(JSON.stringify(row));
     });
 
     return {
@@ -189,248 +248,287 @@ export default function App() {
       cols: cols.length,
       nullCount: totalNulls,
       blankCount: totalBlanks,
-      uniqueCount: new Set(data.map(r => JSON.stringify(r))).size,
-      columnStats
+      uniqueCount: uniqueRows.size,
+      columnStats,
     };
   };
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFiles = e.target.files;
-    if (!uploadedFiles) return;
+  const handleFileUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const uploadedFiles = e.target.files;
+      if (!uploadedFiles) return;
 
-    const newFiles: FileData[] = [];
+      const newFiles: FileData[] = [];
 
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const file = uploadedFiles[i];
-      const reader = new FileReader();
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        const reader = new FileReader();
 
-      const parsePromise = new Promise<any[]>((resolve, reject) => {
-        const ext = file.name.split(".").pop()?.toLowerCase();
-        
-        if (ext === "csv") {
-          Papa.parse(file, {
-            header: true,
-            dynamicTyping: true,
-            complete: (results) => resolve(results.data),
-            error: (err) => reject(err)
-          });
-        } else if (ext === "xlsx" || ext === "xls") {
-          reader.onload = (e) => {
-            const data = new Uint8Array(e.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: "array" });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            resolve(XLSX.utils.sheet_to_json(firstSheet));
-          };
-          reader.readAsArrayBuffer(file);
-        } else if (ext === "json") {
-          reader.onload = (e) => {
-            try {
-              resolve(JSON.parse(e.target?.result as string));
-            } catch (err) { reject(err); }
-          };
-          reader.readAsText(file);
-        } else if (ext === "yaml" || ext === "yml") {
-          reader.onload = (e) => {
-            try {
-              resolve(yaml.load(e.target?.result as string) as any[]);
-            } catch (err) { reject(err); }
-          };
-          reader.readAsText(file);
-        } else {
-          reject(new Error("Unsupported file type"));
+        const parsePromise = new Promise<any[]>((resolve, reject) => {
+          const ext = file.name.split(".").pop()?.toLowerCase();
+
+          if (ext === "csv") {
+            Papa.parse(file, {
+              header: true,
+              dynamicTyping: true,
+              complete: (results) => resolve(results.data),
+              error: (err) => reject(err),
+            });
+          } else if (ext === "xlsx" || ext === "xls") {
+            reader.onload = (event) => {
+              const data = new Uint8Array(event.target?.result as ArrayBuffer);
+              const workbook = XLSX.read(data, { type: "array" });
+              const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+              resolve(XLSX.utils.sheet_to_json(firstSheet));
+            };
+            reader.readAsArrayBuffer(file);
+          } else if (ext === "json") {
+            reader.onload = (event) => {
+              try {
+                resolve(JSON.parse(event.target?.result as string));
+              } catch (err) {
+                reject(err);
+              }
+            };
+            reader.readAsText(file);
+          } else if (ext === "yaml" || ext === "yml") {
+            reader.onload = (event) => {
+              try {
+                resolve(yaml.load(event.target?.result as string) as any[]);
+              } catch (err) {
+                reject(err);
+              }
+            };
+            reader.readAsText(file);
+          } else {
+            reject(new Error("Unsupported file type"));
+          }
+        });
+
+        try {
+          const data = await parsePromise;
+          const metadata = calculateMetadata(data);
+          if (metadata) {
+            const fileId = Math.random().toString(36).substring(7);
+            newFiles.push({
+              id: fileId,
+              name: file.name,
+              type: file.type || "application/octet-stream",
+              data,
+              originalData: [...data],
+              metadata,
+            });
+          }
+        } catch (err) {
+          console.error(`Error parsing ${file.name}:`, err);
         }
-      });
-
-      try {
-        const data = await parsePromise;
-        const metadata = calculateMetadata(data);
-        if (metadata) {
-          const fileId = Math.random().toString(36).substring(7);
-          newFiles.push({
-            id: fileId,
-            name: file.name,
-            type: file.type || "application/octet-stream",
-            data,
-            originalData: [...data],
-            metadata
-          });
-        }
-      } catch (err) {
-        console.error(`Error parsing ${file.name}:`, err);
       }
-    }
 
-    setFiles(prev => [...prev, ...newFiles]);
-    if (newFiles.length > 0 && !selectedFileId) {
-      setSelectedFileId(newFiles[0].id);
-    }
-  }, [selectedFileId]);
+      setFiles((prev) => [...prev, ...newFiles]);
+      if (newFiles.length > 0) {
+        setSelectedFileId(newFiles[0].id);
+      }
+    },
+    []
+  );
+
+  const addTransformation = () => {
+    setTransformations((prev) => [
+      ...prev,
+      { id: Math.random().toString(36).slice(2), column: "", operation: "fill_nulls", value: "" },
+    ]);
+  };
+
+  const removeTransformation = (id: string) => {
+    setTransformations((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const updateTransformation = (id: string, field: keyof Transformation, value: string) => {
+    setTransformations((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const runSqlQuery = () => {
+    setIsSqlRunning(true);
+    setSqlStatus("Executing query...");
+    setTimeout(() => {
+      setIsSqlRunning(false);
+      setSqlStatus("Query executed, preview available");
+    }, 1200);
+  };
+
+  const computeColumnDetails = () => {
+    if (!selectedFile || !selectedColumn) return null;
+    const stats = selectedFile.metadata.columnStats[selectedColumn];
+    if (!stats) return null;
+
+    const rows = selectedFile.metadata.rows;
+    const nullPct = Math.round((stats.nulls / Math.max(1, rows)) * 100);
+    const uniquePct = Math.round((stats.uniques / Math.max(1, rows)) * 100);
+    const sampleValues = selectedFile.data.slice(0, 5).map((row) => String(row[selectedColumn] ?? "")).filter(Boolean);
+
+    const columnValues = selectedFile.data.map((row) => row[selectedColumn]);
+    const numericVals = columnValues
+      .map((value) => Number(value))
+      .filter((value) => !Number.isNaN(value));
+    const min = numericVals.length ? Math.min(...numericVals) : null;
+    const max = numericVals.length ? Math.max(...numericVals) : null;
+
+    return {
+      name: selectedColumn,
+      type: stats.type,
+      nullPct,
+      uniquePct,
+      min,
+      max,
+      sampleValues,
+    };
+  };
+
+  const columnDetails = computeColumnDetails();
 
   const cleanData = () => {
     if (!selectedFile) return;
     setIsCleaning(true);
 
     setTimeout(() => {
-      let cleaned = [...selectedFile.data];
-      const initialRows = cleaned.length;
-      const changes: string[] = [];
+      let cleaned = selectedFile.data.map((row) => ({ ...row }));
+      const changeLog: string[] = [];
 
-      // 1. Handle Duplicates
-      if (config.duplicates === "remove") {
-        const seen = new Set();
-        const beforeCount = cleaned.length;
-        cleaned = cleaned.filter(row => {
-          const str = JSON.stringify(row);
-          if (seen.has(str)) return false;
-          seen.add(str);
-          return true;
-        });
-        if (beforeCount !== cleaned.length) {
-          changes.push(`Removed ${beforeCount - cleaned.length} duplicate rows`);
-        }
-      }
+      transformations.forEach((trans) => {
+        if (!trans.column && trans.operation !== "remove_duplicates") return;
 
-      // 2. Handle Blanks (Strings)
-      if (config.blanks !== "leave") {
-        let blankCount = 0;
-        cleaned = cleaned.map(row => {
-          const newRow = { ...row };
-          Object.keys(newRow).forEach(key => {
-            if (typeof newRow[key] === "string" && newRow[key].trim() === "") {
-              if (config.blanks === "toNull") {
-                newRow[key] = null;
-                blankCount++;
-              }
-            }
+        if (trans.operation === "remove_duplicates") {
+          const seen = new Set<string>();
+          const beforeCount = cleaned.length;
+          cleaned = cleaned.filter((row) => {
+            const key = JSON.stringify(row);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
           });
-          return newRow;
-        });
+          if (beforeCount !== cleaned.length) {
+            changeLog.push(`Removed ${beforeCount - cleaned.length} duplicate rows`);
+          }
+          return;
+        }
 
-        if (config.blanks === "drop") {
+        if (trans.operation === "drop_nulls") {
           const before = cleaned.length;
-          cleaned = cleaned.filter(row => {
-            return !Object.values(row).some(v => typeof v === "string" && v.trim() === "");
+          cleaned = cleaned.filter((row) => {
+            const value = row[trans.column];
+            return value !== null && value !== undefined && String(value).trim() !== "";
           });
           if (before !== cleaned.length) {
-            changes.push(`Dropped ${before - cleaned.length} rows with blank strings`);
+            changeLog.push(`Dropped ${before - cleaned.length} rows with null or blank ${trans.column}`);
           }
-        } else if (blankCount > 0) {
-          changes.push(`Converted ${blankCount} blank strings to NULL`);
+          return;
         }
-      }
 
-      // 3. Handle Zeros
-      if (config.zeros !== "leave") {
-        const cols = Object.keys(cleaned[0] || {});
-        cols.forEach(col => {
-          const stats = selectedFile.metadata.columnStats[col];
-          if (stats.type === "numeric") {
-            let zeroCount = 0;
-            const values = cleaned.map(r => Number(r[col])).filter(v => !isNaN(v));
-            const mean = values.reduce((a, b) => a + b, 0) / values.length;
-            const sorted = [...values].sort((a, b) => a - b);
-            const median = sorted[Math.floor(sorted.length / 2)];
-
-            cleaned = cleaned.map(row => {
-              if (row[col] === 0) {
-                zeroCount++;
-                if (config.zeros === "toNull") return { ...row, [col]: null };
-                if (config.zeros === "replaceMean") return { ...row, [col]: mean };
-                if (config.zeros === "replaceMedian") return { ...row, [col]: median };
-              }
-              return row;
-            });
-            if (zeroCount > 0) {
-              changes.push(`Handled ${zeroCount} zero values in column '${col}' using ${config.zeros}`);
+        if (trans.operation === "trim_whitespace") {
+          cleaned = cleaned.map((row) => {
+            const value = row[trans.column];
+            if (typeof value === "string") {
+              return { ...row, [trans.column]: value.trim() };
             }
-          }
-        });
-      }
-
-      // 4. Handle NULLs
-      if (config.nulls !== "leave") {
-        if (config.nulls === "drop") {
-          const before = cleaned.length;
-          cleaned = cleaned.filter(row => {
-            return !Object.values(row).some(v => v === null || v === undefined || v === "");
+            return row;
           });
-          if (before !== cleaned.length) {
-            changes.push(`Dropped ${before - cleaned.length} rows with NULL values`);
-          }
-        } else {
-          const cols = Object.keys(cleaned[0] || {});
-          cols.forEach(col => {
-            const stats = selectedFile.metadata.columnStats[col];
-            let fillCount = 0;
-            
-            cleaned = cleaned.map(row => {
-              if (row[col] === null || row[col] === undefined || row[col] === "") {
-                fillCount++;
-                if (config.nulls === "fill0") return { ...row, [col]: 0 };
-                if (config.nulls === "fillMean" && stats.type === "numeric") {
-                  const values = selectedFile.data.map(r => Number(r[col])).filter(v => !isNaN(v));
-                  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-                  return { ...row, [col]: mean };
-                }
-                if (config.nulls === "fillMode") {
-                  const counts: Record<any, number> = {};
-                  selectedFile.data.forEach(r => {
-                    const v = r[col];
-                    if (v !== null && v !== undefined && v !== "") {
-                      counts[v] = (counts[v] || 0) + 1;
-                    }
-                  });
-                  const mode = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b, "");
-                  return { ...row, [col]: mode };
-                }
-              }
-              return row;
-            });
-            if (fillCount > 0) {
-              changes.push(`Filled ${fillCount} NULLs in column '${col}' using ${config.nulls}`);
-            }
-          });
+          changeLog.push(`Trimmed whitespace in ${trans.column}`);
+          return;
         }
-      }
+
+        if (trans.operation === "standardize_case") {
+          cleaned = cleaned.map((row) => {
+            const value = row[trans.column];
+            if (typeof value === "string") {
+              return { ...row, [trans.column]: value.toUpperCase() };
+            }
+            return row;
+          });
+          changeLog.push(`Standardized case for ${trans.column}`);
+          return;
+        }
+
+        if (trans.operation === "fill_nulls") {
+          const numericValues = cleaned
+            .map((row) => row[trans.column])
+            .filter((value) => value !== null && value !== undefined && value !== "")
+            .map((value) => Number(value))
+            .filter((value) => !Number.isNaN(value));
+          const fillValue = numericValues.length
+            ? numericValues.reduce((sum, next) => sum + next, 0) / numericValues.length
+            : trans.value || "MISSING";
+
+          cleaned = cleaned.map((row) => {
+            const value = row[trans.column];
+            if (value === null || value === undefined || value === "") {
+              return { ...row, [trans.column]: fillValue };
+            }
+            return row;
+          });
+          changeLog.push(`Filled missing values in ${trans.column}`);
+          return;
+        }
+      });
 
       const newMetadata = calculateMetadata(cleaned);
       if (newMetadata) {
-        setFiles(prev => prev.map(f => f.id === selectedFile.id ? { ...f, data: cleaned, metadata: newMetadata } : f));
-        
+        setFiles((prev) =>
+          prev.map((file) =>
+            file.id === selectedFile.id ? { ...file, data: cleaned, metadata: newMetadata } : file
+          )
+        );
+
         const run: RunHistory = {
           id: Math.random().toString(36).substring(7),
           timestamp: Date.now(),
           fileName: selectedFile.name,
-          config: { ...config },
-          rowsRemoved: initialRows - cleaned.length,
-          changes
+          config: {
+            nulls: "leave",
+            blanks: "leave",
+            zeros: "leave",
+            duplicates: "keep",
+          },
+          rowsRemoved: selectedFile.data.length - cleaned.length,
+          changes: changeLog.length ? changeLog : ["Applied transformation workflow"],
         };
-        setHistory(prev => [run, ...prev]);
+
+        setHistory((prev) => [run, ...prev]);
       }
+
       setIsCleaning(false);
-    }, 800);
+    }, 900);
   };
+
+  const [history, setHistory] = useState<RunHistory[]>([]);
 
   const resetFile = () => {
     if (!selectedFile) return;
     const originalMetadata = calculateMetadata(selectedFile.originalData);
-    if (originalMetadata) {
-      setFiles(prev => prev.map(f => f.id === selectedFile.id ? { 
-        ...f, 
-        data: [...selectedFile.originalData], 
-        metadata: originalMetadata 
-      } : f));
-      
-      const run: RunHistory = {
+    if (!originalMetadata) return;
+
+    setFiles((prev) =>
+      prev.map((file) =>
+        file.id === selectedFile.id ? { ...file, data: [...file.originalData], metadata: originalMetadata } : file
+      )
+    );
+    setHistory((prev) => [
+      {
         id: Math.random().toString(36).substring(7),
         timestamp: Date.now(),
         fileName: selectedFile.name,
-        config: config,
+        config: {
+          nulls: "leave",
+          blanks: "leave",
+          zeros: "leave",
+          duplicates: "keep",
+        },
         rowsRemoved: 0,
-        changes: ["Reset to original data"]
-      };
-      setHistory(prev => [run, ...prev]);
-    }
+        changes: ["Reset dataset to original state"],
+      },
+      ...prev,
+    ]);
   };
 
   const downloadCSV = () => {
@@ -447,607 +545,503 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const beforeMetadata = useMemo(() => {
+    if (!selectedFile) return null;
+    return calculateMetadata(selectedFile.originalData);
+  }, [selectedFile]);
+
   return (
-    <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-indigo-100">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-              <RefreshCw className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-800">CleanSheet</h1>
-              <p className="text-sm text-slate-500">Selected source: {currentSourceLabel}</p>
-              <p className="text-xs text-slate-400 mt-1">Import local files or connect to databases, preview datasets, and clean them in one workflow.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Source menu available below</div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {showConnectorModal && sourceType === "db" && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-            <div className="w-full max-w-2xl rounded-3xl bg-white border border-slate-200 shadow-2xl p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Next steps</p>
-                  <h2 className="mt-3 text-2xl font-bold text-slate-900">Set up {currentSourceLabel}</h2>
+    <div className="min-h-screen text-slate-100 bg-slate-950">
+      <div className="flex min-h-screen">
+        <aside
+          className={cn(
+            "transition-all border-r border-slate-800 bg-slate-950",
+            showSidebar ? "w-72" : "w-20"
+          )}
+        >
+          <div className="flex h-full flex-col py-4 px-3">
+            <div className="mb-6 flex items-center justify-between gap-2 px-2">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-2xl bg-indigo-600 flex items-center justify-center text-slate-950">
+                  <Cpu className="h-5 w-5" />
                 </div>
-                <button
-                  onClick={() => setShowConnectorModal(false)}
-                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="mt-6 space-y-4 text-sm text-slate-600">
-                <p>Follow these guided steps to import your dataset from the selected connector.</p>
-                <ol className="space-y-3 pl-5 list-decimal text-slate-600">
-                  <li><span className="font-semibold">Enter connection details</span> for {currentSourceLabel} in the form below.</li>
-                  <li><span className="font-semibold">Paste or update</span> the SQL query to fetch the data you need.</li>
-                  <li><span className="font-semibold">Preview query results</span> and then import the dataset for cleaning.</li>
-                </ol>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={() => setShowConnectorModal(false)}
-                  className="rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-                >
-                  Continue to connector
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Data source</p>
-              <h2 className="mt-3 text-2xl font-bold text-slate-900">Choose where your data comes from</h2>
-              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
-                Select either a local file upload or a database connector. The screen will update with the guided next step for your source.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-[280px_1fr] items-end">
-            <div className="grid gap-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Data source</label>
-              <select
-                value={sourceType === "upload" ? "upload" : dbConnector}
-                onChange={handleSourceSelectionChange}
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                {sourceOptions.map(option => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="rounded-3xl bg-slate-50 border border-slate-200 p-5 text-sm leading-6 text-slate-600">
-              {sourceType === "upload" ? (
-                <>
-                  Upload local CSV, Excel, JSON, or YAML files. The upload form will appear below once you select this source.
-                </>
-              ) : (
-                <>
-                  You selected <span className="font-semibold text-slate-900">{currentSourceLabel}</span>. Follow the popup steps to configure your connector, preview a query, and import the dataset.
-                </>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {sourceType === "upload" ? (
-          <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-10 text-center">
-            <div className="flex flex-col items-center justify-center gap-6">
-              <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center">
-                <FileSpreadsheet className="w-10 h-10 text-indigo-500" />
-              </div>
-              <div className="space-y-3 max-w-xl">
-                <h2 className="text-2xl font-semibold text-slate-800">Upload files locally</h2>
-                <p className="text-slate-500">Select or drag files to add them as datasets. Once uploaded, you can clean them using the same workflow.</p>
-              </div>
-              <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-2xl text-sm font-medium transition-all flex items-center gap-2 shadow-sm">
-                <Upload className="w-4 h-4" />
-                Upload Files / Folder
-                <input
-                  type="file"
-                  multiple
-                  {...({ webkitdirectory: "", directory: "" } as any)}
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
-                />
-              </label>
-            </div>
-          </section>
-        ) : (
-          <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Database Import</p>
-                <h2 className="mt-3 text-2xl font-bold text-slate-900">Configure your connector</h2>
-                <p className="mt-2 text-sm text-slate-500 max-w-2xl">
-                  Enter the connection details and SQL query for the selected source. A popup guides you through the next steps.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={handleDbPreview}
-                  disabled={isDbLoading}
-                  className={cn(
-                    "px-4 py-2 rounded-2xl font-semibold text-sm transition-all",
-                    isDbLoading
-                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                      : "bg-indigo-600 text-white hover:bg-indigo-700"
-                  )}
-                >
-                  {isDbLoading ? 'Previewing…' : 'Preview Query'}
-                </button>
-                <button
-                  onClick={handleDbImport}
-                  disabled={!dbPreview?.length}
-                  className={cn(
-                    "px-4 py-2 rounded-2xl font-semibold text-sm transition-all",
-                    !dbPreview?.length
-                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700"
-                  )}
-                >
-                  Import Preview
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-4 mt-6 lg:grid-cols-2">
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Connector</label>
-                <select
-                  value={dbConnector}
-                  onChange={(e) => {
-                    setDbConnector(e.target.value);
-                    setSourceType("db");
-                    setShowConnectorModal(true);
-                  }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {dbConnectors.map(connector => (
-                    <option key={connector.id} value={connector.id}>{connector.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Host</label>
-                <input
-                  value={dbHost}
-                  onChange={(e) => setDbHost(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="db.example.com"
-                />
-              </div>
-
-              <div className="grid gap-2 md:grid-cols-2 md:gap-4">
-                <div className="grid gap-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Port</label>
-                  <input
-                    value={dbPort}
-                    onChange={(e) => setDbPort(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="5439"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Database</label>
-                  <input
-                    value={dbDatabase}
-                    onChange={(e) => setDbDatabase(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="my_database"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-2 md:grid-cols-2 md:gap-4">
-                <div className="grid gap-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Schema</label>
-                  <input
-                    value={dbSchema}
-                    onChange={(e) => setDbSchema(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="public"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">User</label>
-                  <input
-                    value={dbUser}
-                    onChange={(e) => setDbUser(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="username"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Password</label>
-                <input
-                  type="password"
-                  value={dbPassword}
-                  onChange={(e) => setDbPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">SQL Query</label>
-                <textarea
-                  value={dbQuery}
-                  onChange={(e) => setDbQuery(e.target.value)}
-                  className="min-h-[180px] w-full bg-slate-50 border border-slate-200 rounded-3xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                />
-              </div>
-
-              {dbPreview && dbPreview.length > 0 && (
-                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-slate-800">Preview loaded</p>
-                    <span className="text-xs uppercase tracking-[0.2em] text-slate-400">{dbPreview.length} rows</span>
+                {showSidebar && (
+                  <div>
+                    <p className="text-sm font-semibold">CleanPro Studio</p>
+                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Analytics</p>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-600">
-                      <thead>
-                        <tr>
-                          {Object.keys(dbPreview[0]).map(col => (
-                            <th key={col} className="px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200">{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dbPreview.slice(0, 3).map((row, idx) => (
-                          <tr key={idx} className="odd:bg-white even:bg-slate-100">
-                            {Object.values(row).map((cell, index) => (
-                              <td key={index} className="px-3 py-2 whitespace-nowrap">{String(cell)}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-        )}
-
-        {!files.length ? (
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-slate-200 rounded-3xl bg-white/50">
-            <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
-              <FileSpreadsheet className="w-10 h-10 text-indigo-500" />
-            </div>
-            <h2 className="text-2xl font-semibold text-slate-800 mb-2">No dataset loaded yet</h2>
-            <p className="text-slate-500 mb-8 max-w-md text-center">
-              {sourceType === "upload"
-                ? "Upload CSV, Excel, JSON or YAML files to start cleaning your data. You can select multiple files or drag them here."
-                : "Select a connector and preview a query to import a dataset. You can also switch back to Upload Files in the source dropdown above."
-              }
-            </p>
-            {sourceType === "upload" ? (
-              <label className="cursor-pointer bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 px-8 py-3 rounded-2xl text-slate-700 font-medium transition-all flex items-center gap-3 shadow-sm group">
-                <Upload className="w-5 h-5 text-slate-400 group-hover:text-indigo-500" />
-                Choose Files or Folder
-                <input 
-                  type="file" 
-                  multiple 
-                  {...({ webkitdirectory: "", directory: "" } as any)}
-                  className="hidden" 
-                  onChange={handleFileUpload}
-                  accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
-                />
-              </label>
-            ) : (
+                )}
+              </div>
               <button
-                onClick={() => setSourceType("upload")}
-                className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-sm font-semibold hover:bg-indigo-700 transition-all"
+                onClick={() => setShowSidebar((open) => !open)}
+                className="rounded-lg border border-slate-700 bg-slate-900 p-2 text-slate-400 hover:bg-slate-800"
               >
-                Switch to Upload Files
+                <ChevronRight className={cn("h-4 w-4 transition-transform", showSidebar ? "rotate-180" : "rotate-0")} />
               </button>
-            )}
+            </div>
+
+            <nav className="space-y-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    className="group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
+                  >
+                    <Icon className="h-4 w-4 text-slate-400 group-hover:text-indigo-400" />
+                    {showSidebar && <span>{item.label}</span>}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="mt-auto space-y-4 px-2">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">
+                <p className="text-slate-300 mb-2 uppercase tracking-[0.3em]">Active source</p>
+                <p>{sourceType === "upload" ? "Local files" : "Database connector"}</p>
+              </div>
+              {showSidebar && (
+                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">
+                  <p className="mb-2 uppercase tracking-[0.3em] text-slate-500">Workflow</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.3em]">
+                      <span>Profile</span>
+                      <span>{selectedFile ? selectedFile.metadata.rows : 0} rows</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                      <div className="h-full rounded-full bg-cyan-500" style={{ width: `${qualityScore}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Sidebar: File List & Config */}
-            <div className="lg:col-span-4 space-y-6">
-              {/* File Selector */}
-              <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <Database className="w-4 h-4" />
-                  Your Datasets
-                </h3>
-                <div className="space-y-2">
-                  {files.map(file => (
-                    <button
-                      key={file.id}
-                      onClick={() => setSelectedFileId(file.id)}
-                      className={cn(
-                        "w-full flex items-center justify-between p-3 rounded-xl transition-all group",
-                        selectedFileId === file.id 
-                          ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200" 
-                          : "hover:bg-slate-50 text-slate-600"
-                      )}
-                    >
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <FileText className={cn("w-5 h-5 shrink-0", selectedFileId === file.id ? "text-indigo-500" : "text-slate-400")} />
-                        <span className="text-sm font-medium truncate">{file.name}</span>
+        </aside>
+
+        <main className="flex-1 overflow-y-auto px-4 py-4 lg:px-6">
+          <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 text-sm text-slate-400">
+                <span className="rounded-full bg-slate-800 px-2 py-1">Workspace</span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-2 py-1 text-slate-500">Data quality</span>
+              </div>
+              <h1 className="text-2xl font-semibold text-slate-100">Analytics Engineering Workspace</h1>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+                <span>Dataset: <span className="text-slate-100">{activeDatasetName}</span></span>
+                <span>Rows: <span className="text-slate-100">{rowCount}</span></span>
+                <span>Columns: <span className="text-slate-100">{selectedFile?.metadata.cols ?? 0}</span></span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="cursor-pointer rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">
+                <Upload className="h-4 w-4 text-cyan-300" />
+                <input type="file" multiple hidden onChange={handleFileUpload} accept=".csv,.xlsx,.xls,.json,.yaml,.yml" />
+              </label>
+              <button
+                onClick={cleanData}
+                disabled={isCleaning || !selectedFile}
+                className={cn(
+                  "rounded-lg px-4 py-2 text-sm font-semibold transition-all",
+                  isCleaning || !selectedFile
+                    ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                )}
+              >
+                {isCleaning ? "Cleaning…" : "Clean"}
+              </button>
+              <button
+                onClick={runSqlQuery}
+                className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+              >
+                SQL
+              </button>
+              <button
+                onClick={downloadCSV}
+                disabled={!selectedFile}
+                className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+              >
+                Export
+              </button>
+              <button
+                onClick={resetFile}
+                disabled={!selectedFile}
+                className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_320px]">
+            <div className="space-y-4">
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-lg shadow-slate-950/20">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Data Quality Score</p>
+                    <p className="mt-2 text-3xl font-semibold text-slate-100">{qualityScore}/100</p>
+                  </div>
+                  <div className="grid gap-2 rounded-2xl bg-slate-950 px-3 py-2 text-xs text-slate-400">
+                    <div className="flex items-center justify-between gap-4">
+                      <span>Nulls</span>
+                      <span className="text-amber-300">{computeSeverity(selectedFile?.metadata.nullCount ?? 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span>Duplicates</span>
+                      <span className="text-red-300">{computeSeverity(selectedFile ? selectedFile.metadata.rows - selectedFile.metadata.uniqueCount : 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span>Schema Drift</span>
+                      <span className="text-cyan-300">Low</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span>Outliers</span>
+                      <span className="text-emerald-300">Medium</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {[
+                    { label: "Nulls", value: selectedFile?.metadata.nullCount ?? 0, color: "bg-amber-500" },
+                    { label: "Blanks", value: selectedFile?.metadata.blankCount ?? 0, color: "bg-slate-500" },
+                    { label: "Unique rows", value: selectedFile?.metadata.uniqueCount ?? 0, color: "bg-cyan-500" },
+                  ].map((item) => (
+                    <div key={item.label} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.25em] text-slate-500">
+                        <span>{item.label}</span>
+                        <span>{item.value}</span>
                       </div>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFiles(prev => prev.filter(f => f.id !== file.id));
-                          if (selectedFileId === file.id) setSelectedFileId(null);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 hover:text-red-500 rounded-md transition-all"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </button>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-950">
+                        <div className={cn("h-full rounded-full", item.color)} style={{ width: `${Math.min(100, (item.value / Math.max(1, selectedFile?.metadata.rows ?? 1)) * 100)}%` }} />
+                      </div>
+                    </div>
                   ))}
                 </div>
               </section>
 
-              {/* Cleaning Options */}
-              <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
-                  <Settings2 className="w-4 h-4" />
-                  Cleaning Rules
-                </h3>
-                
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">NULL Values</label>
-                    <select 
-                      value={config.nulls}
-                      onChange={(e) => setConfig(prev => ({ ...prev, nulls: e.target.value as NullOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    >
-                      <option value="leave">Leave unchanged</option>
-                      <option value="drop">Drop rows with NULLs</option>
-                      <option value="fill0">Fill with 0</option>
-                      <option value="fillMean">Fill with mean (Numeric)</option>
-                      <option value="fillMode">Fill with mode</option>
-                    </select>
+              <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-slate-500">
+                    <ArrowDown className="h-4 w-4 text-cyan-300" />
+                    <span>Pipeline</span>
                   </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Blank Strings</label>
-                    <select 
-                      value={config.blanks}
-                      onChange={(e) => setConfig(prev => ({ ...prev, blanks: e.target.value as BlankOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    >
-                      <option value="leave">Leave unchanged</option>
-                      <option value="toNull">Convert to NULL</option>
-                      <option value="drop">Drop rows with blanks</option>
-                    </select>
+                  <div className="mt-4 grid gap-3">
+                    {[
+                      "Upload",
+                      "Profile",
+                      "Transform",
+                      "Validate",
+                      "Export",
+                    ].map((step, index) => (
+                      <div key={step} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm text-slate-200">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-cyan-300">{index + 1}</span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
                   </div>
+                </div>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Zero Values</label>
-                    <select 
-                      value={config.zeros}
-                      onChange={(e) => setConfig(prev => ({ ...prev, zeros: e.target.value as ZeroOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    >
-                      <option value="leave">Leave unchanged</option>
-                      <option value="toNull">Convert to NULL</option>
-                      <option value="replaceMean">Replace with mean</option>
-                      <option value="replaceMedian">Replace with median</option>
-                    </select>
+                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Comparison</div>
+                    <span className="rounded-full bg-slate-800 px-2 py-1 text-[11px] uppercase tracking-[0.3em] text-slate-400">Before / After</span>
                   </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Duplicates</label>
-                    <select 
-                      value={config.duplicates}
-                      onChange={(e) => setConfig(prev => ({ ...prev, duplicates: e.target.value as DuplicateOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                    >
-                      <option value="keep">Keep duplicates</option>
-                      <option value="remove">Remove duplicates</option>
-                    </select>
+                  <div className="mt-4 grid gap-3 text-sm text-slate-300">
+                    <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl bg-slate-950 p-3">
+                      <span className="text-slate-400">Rows before</span>
+                      <span>{beforeMetadata?.rows ?? 0}</span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl bg-slate-950 p-3">
+                      <span className="text-slate-400">Rows after</span>
+                      <span>{selectedFile?.metadata.rows ?? 0}</span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl bg-slate-950 p-3">
+                      <span className="text-slate-400">Nulls fixed</span>
+                      <span>{Math.max(0, (beforeMetadata?.nullCount ?? 0) - (selectedFile?.metadata.nullCount ?? 0))}</span>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl bg-slate-950 p-3">
+                      <span className="text-slate-400">Quality delta</span>
+                      <span>{selectedFile ? qualityScore - (beforeMetadata ? Math.max(0, 100 - Math.min(70, (beforeMetadata.nullCount * 1.2 + beforeMetadata.blankCount * 0.8))) : 0) : 0}</span>
+                    </div>
                   </div>
+                </div>
+              </section>
 
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Transformations</p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-100">Transformation Workflow</h2>
+                  </div>
                   <button
-                    onClick={cleanData}
-                    disabled={isCleaning || !selectedFile}
-                    className={cn(
-                      "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg",
-                      isCleaning 
-                        ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
-                        : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 active:scale-[0.98]"
-                    )}
+                    onClick={addTransformation}
+                    className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
                   >
-                    {isCleaning ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        Cleaning...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4" />
-                        Clean Data
-                      </>
-                    )}
+                    + Add Transformation
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {transformations.map((trans) => (
+                    <div key={trans.id} className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-3 lg:grid-cols-[1fr_1fr_1fr_auto]">
+                      <div className="space-y-2">
+                        <label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Column</label>
+                        <select
+                          value={trans.column}
+                          onChange={(e) => updateTransformation(trans.id, "column", e.target.value)}
+                          className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+                        >
+                          <option value="">Select column</option>
+                          {columns.map((col) => (
+                            <option key={col} value={col}>{col}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Operation</label>
+                        <select
+                          value={trans.operation}
+                          onChange={(e) => updateTransformation(trans.id, "operation", e.target.value)}
+                          className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+                        >
+                          {transformationOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Value</label>
+                        <input
+                          value={trans.value}
+                          onChange={(e) => updateTransformation(trans.id, "value", e.target.value)}
+                          placeholder="Optional"
+                          className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+                        />
+                      </div>
+
+                      <button
+                        onClick={() => removeTransformation(trans.id)}
+                        className="mt-auto rounded-lg border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-200 hover:bg-red-900"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <aside className="space-y-4">
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">AI Insights</p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-100">Contextual observations</h2>
+                  </div>
+                  <Sparkles className="h-5 w-5 text-cyan-300" />
+                </div>
+                <div className="mt-4 space-y-3 text-sm text-slate-300">
+                  {insights.map((insight, index) => (
+                    <div key={index} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                      <p>{insight}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Query Workspace</p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-100">SQL Editor</h2>
+                  </div>
+                  <div className="text-xs text-slate-400">{sqlStatus}</div>
+                </div>
+                <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950">
+                  <Editor
+                    height="260px"
+                    defaultLanguage="sql"
+                    defaultValue={dbQuery}
+                    value={dbQuery}
+                    onChange={(value) => setDbQuery(value || "")}
+                    theme="vs-dark"
+                    options={{
+                      fontSize: 12,
+                      minimap: { enabled: false },
+                      wordWrap: "on",
+                      lineNumbers: "on",
+                      folding: true,
+                      scrollBeyondLastLine: false,
+                    }}
+                  />
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    onClick={runSqlQuery}
+                    className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                  >
+                    {isSqlRunning ? "Running…" : "Run query"}
+                  </button>
+                  <button
+                    onClick={handleDbPreview}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+                  >
+                    Preview
                   </button>
                 </div>
               </section>
+            </aside>
+          </div>
 
-              {/* History */}
-              <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <History className="w-4 h-4" />
-                  Run History
-                </h3>
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                  {history.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-4 italic">No cleaning runs yet</p>
-                  ) : (
-                    history.map(run => (
-                      <div key={run.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">{new Date(run.timestamp).toLocaleTimeString()}</span>
-                          <span className="text-[10px] font-bold bg-red-50 text-red-600 px-1.5 py-0.5 rounded">-{run.rowsRemoved} rows</span>
-                        </div>
-                        <p className="text-xs font-semibold text-slate-700 truncate">{run.fileName}</p>
-                        <ul className="text-[10px] text-slate-500 space-y-1 pl-2 border-l border-slate-200">
-                          {run.changes.slice(0, 2).map((c, idx) => (
-                            <li key={idx} className="truncate">• {c}</li>
-                          ))}
-                          {run.changes.length > 2 && <li className="italic">+ {run.changes.length - 2} more</li>}
-                        </ul>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </section>
+          <section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-lg shadow-slate-950/30">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Dataset Explorer</p>
+                <h2 className="mt-2 text-lg font-semibold text-slate-100">Data preview</h2>
+              </div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                <Search className="h-4 w-4" />
+                <span>Click a column header to profile</span>
+              </div>
             </div>
 
-            {/* Main Content: Preview & Stats */}
-            <div className="lg:col-span-8 space-y-6">
-              {selectedFile ? (
-                <>
-                  {/* Stats Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Rows</p>
-                      <p className="text-2xl font-bold text-slate-800">{selectedFile.metadata.rows.toLocaleString()}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Columns</p>
-                      <p className="text-2xl font-bold text-slate-800">{selectedFile.metadata.cols}</p>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Null Values</p>
-                      <p className="text-2xl font-bold text-indigo-600">
-                        {((selectedFile.metadata.nullCount / (selectedFile.metadata.rows * selectedFile.metadata.cols)) * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Unique Rows</p>
-                      <p className="text-2xl font-bold text-slate-800">
-                        {((selectedFile.metadata.uniqueCount / selectedFile.metadata.rows) * 100).toFixed(0)}%
-                      </p>
-                    </div>
-                  </div>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse text-sm text-slate-200">
+                  <thead>
+                    <tr className="bg-slate-950 text-slate-400">
+                      <th className="sticky left-0 z-20 border-b border-slate-800 bg-slate-950 px-3 py-2 text-left text-xs uppercase tracking-[0.3em]">#</th>
+                      {columns.slice(0, 12).map((column, index) => (
+                        <th
+                          key={column}
+                          onClick={() => setSelectedColumn(column)}
+                          className={cn(
+                            "border-b border-slate-800 px-3 py-2 text-left text-xs uppercase tracking-[0.3em] text-slate-400 transition-colors hover:bg-slate-900 cursor-pointer",
+                            index === 0 && "sticky left-12 z-10 bg-slate-950"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>{column}</span>
+                            <ChevronRight className="h-3 w-3 text-slate-500" />
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(selectedFile?.data ?? []).slice(0, 14).map((row, rowIndex) => (
+                      <tr key={rowIndex} className="border-b border-slate-800 hover:bg-slate-900">
+                        <td className="sticky left-0 z-10 border-r border-slate-800 bg-slate-950 px-3 py-2 text-slate-400">{rowIndex + 1}</td>
+                        {columns.slice(0, 12).map((column, index) => (
+                          <td
+                            key={`${rowIndex}-${column}`}
+                            className={cn(
+                              "px-3 py-2 text-slate-200",
+                              index === 0 && "sticky left-12 z-0 bg-slate-950"
+                            )}
+                          >
+                            {String(row[column] ?? "")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </main>
 
-                  {/* Data Preview */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                      <div className="flex items-center gap-3">
-                        <h2 className="font-bold text-slate-800">Data Preview</h2>
-                        <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold uppercase">Showing first 100 rows</span>
+        <aside className="hidden w-80 shrink-0 border-l border-slate-800 bg-slate-950 px-4 py-4 xl:block">
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex items-center justify-between gap-3 text-slate-400">
+                <p className="text-xs uppercase tracking-[0.3em]">Column Profile</p>
+                <span className="text-[10px] uppercase tracking-[0.35em] text-slate-500">{selectedColumn || "Select a field"}</span>
+              </div>
+              {columnDetails ? (
+                <div className="mt-4 space-y-4 text-sm text-slate-200">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Name</p>
+                    <p className="mt-1 text-base font-semibold text-slate-100">{columnDetails.name}</p>
+                  </div>
+                  <div className="grid gap-3">
+                    <div className="rounded-2xl bg-slate-950 p-3">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Type</p>
+                      <p className="mt-1 font-semibold text-slate-100">{columnDetails.type}</p>
+                    </div>
+                    <div className="grid gap-2 rounded-2xl bg-slate-950 p-3">
+                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
+                        <span>Null %</span>
+                        <span>{columnDetails.nullPct}%</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={resetFile}
-                          className="text-slate-400 hover:text-red-500 text-sm font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-all"
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                          Reset
-                        </button>
-                        <button 
-                          onClick={downloadCSV}
-                          className="text-indigo-600 hover:text-indigo-700 text-sm font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-all"
-                        >
-                          <Download className="w-4 h-4" />
-                          Download CSV
-                        </button>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-950">
+                        <div className="h-full rounded-full bg-amber-500" style={{ width: `${columnDetails.nullPct}%` }} />
                       </div>
                     </div>
-                    
-                    <div className="overflow-x-auto overflow-y-auto max-h-[600px] custom-scrollbar">
-                      <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 z-10 bg-white shadow-sm">
-                          <tr>
-                            {Object.keys(selectedFile.data[0] || {}).map(col => (
-                              <th key={col} className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 min-w-[150px]">
-                                <div className="flex flex-col gap-1">
-                                  <span>{col}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className={cn(
-                                      "text-[8px] px-1.5 py-0.5 rounded-sm",
-                                      selectedFile.metadata.columnStats[col].type === "numeric" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
-                                    )}>
-                                      {selectedFile.metadata.columnStats[col].type}
-                                    </span>
-                                    <span className="text-[8px] text-slate-300 font-normal">
-                                      {selectedFile.metadata.columnStats[col].nulls} nulls
-                                    </span>
-                                  </div>
-                                </div>
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {selectedFile.data.slice(0, 100).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                              {Object.values(row).map((val: any, vIdx) => (
-                                <td key={vIdx} className="px-6 py-3.5 text-sm text-slate-600 whitespace-nowrap">
-                                  {val === null || val === undefined || val === "" ? (
-                                    <span className="text-slate-300 italic text-xs">null</span>
-                                  ) : (
-                                    String(val)
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="grid gap-2 rounded-2xl bg-slate-950 p-3">
+                      <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
+                        <span>Unique %</span>
+                        <span>{columnDetails.uniquePct}%</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-950">
+                        <div className="h-full rounded-full bg-emerald-500" style={{ width: `${columnDetails.uniquePct}%` }} />
+                      </div>
+                    </div>
+                    <div className="grid gap-2 rounded-2xl bg-slate-950 p-3">
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Range</div>
+                      <div className="flex items-center justify-between text-sm text-slate-200">
+                        <span>{columnDetails.min ?? "—"}</span>
+                        <span>{columnDetails.max ?? "—"}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2 rounded-2xl bg-slate-950 p-3">
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-500">Sample values</div>
+                      <div className="flex flex-wrap gap-2">
+                        {columnDetails.sampleValues.map((value, idx) => (
+                          <span key={idx} className="rounded-full bg-slate-800 px-2 py-1 text-xs text-slate-300">
+                            {value}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </>
+                </div>
               ) : (
-                <div className="h-full flex items-center justify-center bg-white rounded-2xl border border-slate-200 border-dashed p-12">
-                  <div className="text-center">
-                    <AlertCircle className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                    <p className="text-slate-400 font-medium">Select a file to view details</p>
-                  </div>
+                <div className="mt-4 rounded-2xl border border-dashed border-slate-800 bg-slate-950 p-4 text-sm text-slate-400">
+                  Select any column header in the table to inspect distribution, null rate, and value samples.
                 </div>
               )}
-            </div>
-          </div>
-        )}
-      </main>
+            </section>
 
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #cbd5e1;
-        }
-      `}} />
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Validation Log</p>
+                <ShieldCheck className="h-5 w-5 text-emerald-300" />
+              </div>
+              <div className="mt-4 space-y-3 text-sm text-slate-300">
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
+                    <span>Query runtime</span>
+                    <span>1.2s</span>
+                  </div>
+                  <p className="mt-2 text-slate-200">Latest SQL preview executed successfully.</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
+                    <span>Preview rows</span>
+                    <span>{dbPreview?.length ?? 0}</span>
+                  </div>
+                  <p className="mt-2 text-slate-200">Use connector preview to inspect source results before import.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
