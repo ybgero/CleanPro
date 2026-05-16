@@ -1,7 +1,3 @@
-<div align="center">
-<img width="1200" height="475" alt="CleanPro Data Cleaner" src=" />
-</div>
-
 # CleanPro
 
 CleanPro is a modern data cleaning tool built with React and Vite. Import datasets from local files or connect to major database platforms, preview query results, and apply cleaning rules for nulls, blanks, zeros, and duplicates.
