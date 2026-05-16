@@ -468,7 +468,7 @@ export default function App() {
     )}>
       {/* Header */}
       <header className={cn(
-        "sticky top-4 z-50 backdrop-blur-sm py-4",
+        "backdrop-blur-sm py-4",
         isDark
           ? "border-b border-slate-800 bg-slate-950/98"
           : "border-b border-slate-200 bg-white/95"
