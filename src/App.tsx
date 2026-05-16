@@ -70,6 +70,7 @@ export default function App() {
   ]);
   const [sourceType, setSourceType] = useState<"upload" | "db">("upload");
   const [showSidebar, setShowSidebar] = useState(true);
+  const [activeSection, setActiveSection] = useState("datasets");
   const [dbConnector, setDbConnector] = useState("aws-redshift");
   const [dbHost, setDbHost] = useState("");
   const [dbPort, setDbPort] = useState("");
@@ -140,15 +141,12 @@ export default function App() {
     return notes;
   }, [selectedFile]);
 
-  const handleSourceChange = useCallback((value: string) => {
-    if (value === "upload") {
-      setSourceType("upload");
-      setShowSidebar(true);
-      return;
-    }
+  const handleSourceChange = useCallback((value: "upload" | "db") => {
+    setSourceType(value);
+  }, []);
 
-    setSourceType("db");
-    setDbConnector(value);
+  const handleSectionChange = useCallback((id: string) => {
+    setActiveSection(id);
   }, []);
 
   const handleDbPreview = useCallback(async () => {
@@ -586,9 +584,15 @@ export default function App() {
                 return (
                   <button
                     key={item.id}
-                    className="group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
+                    onClick={() => handleSectionChange(item.id)}
+                    className={cn(
+                      "group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all",
+                      item.id === activeSection
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    )}
                   >
-                    <Icon className="h-4 w-4 text-slate-400 group-hover:text-indigo-400" />
+                    <Icon className={cn("h-4 w-4", item.id === activeSection ? "text-indigo-400" : "text-slate-400 group-hover:text-indigo-400")} />
                     {showSidebar && <span>{item.label}</span>}
                   </button>
                 );
@@ -651,7 +655,7 @@ export default function App() {
                 {isCleaning ? "Cleaning…" : "Clean"}
               </button>
               <button
-                onClick={runSqlQuery}
+                onClick={() => { setActiveSection("insights"); runSqlQuery(); }}
                 className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
               >
                 SQL
@@ -671,6 +675,218 @@ export default function App() {
                 Reset
               </button>
             </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_320px] mb-4">
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleSourceChange("upload")}
+                  className={cn(
+                    "rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                    sourceType === "upload"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  )}
+                >
+                  Upload source
+                </button>
+                <button
+                  onClick={() => handleSourceChange("db")}
+                  className={cn(
+                    "rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                    sourceType === "db"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  )}
+                >
+                  Database connector
+                </button>
+              </div>
+
+              {sourceType === "db" && (
+                <div className="mt-4 grid gap-3 text-sm text-slate-300">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500">Connector</label>
+                      <select
+                        value={dbConnector}
+                        onChange={(e) => setDbConnector(e.target.value)}
+                        className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none"
+                      >
+                        <option value="aws-redshift">AWS Redshift</option>
+                        <option value="azure-synapse">Azure Synapse</option>
+                        <option value="snowflake">Snowflake</option>
+                        <option value="google-bigquery">Google BigQuery</option>
+                        <option value="postgresql">PostgreSQL</option>
+                        <option value="mysql">MySQL</option>
+                        <option value="sql-server">SQL Server</option>
+                        <option value="oracle">Oracle</option>
+                        <option value="mongodb">MongoDB</option>
+                        <option value="databricks">Databricks</option>
+                      </select>
+                    </div>
+                    <div className="grid gap-2">
+                      <label className="text-xs uppercase tracking-[0.2em] text-slate-500">Query</label>
+                      <input
+                        value={dbQuery}
+                        onChange={(e) => setDbQuery(e.target.value)}
+                        className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <button
+                      onClick={handleDbPreview}
+                      disabled={isDbLoading}
+                      className={cn(
+                        "rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                        isDbLoading
+                          ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                          : "bg-cyan-600 text-white hover:bg-cyan-500"
+                      )}
+                    >
+                      {isDbLoading ? "Previewing…" : "Preview query"}
+                    </button>
+                    <button
+                      onClick={handleDbImport}
+                      disabled={!dbPreview?.length}
+                      className={cn(
+                        "rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                        !dbPreview?.length
+                          ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                          : "bg-emerald-600 text-white hover:bg-emerald-500"
+                      )}
+                    >
+                      Import preview
+                    </button>
+                    <button
+                      onClick={() => setActiveSection("datasets")}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+                    >
+                      View datasets
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Active panel</p>
+                  <p className="mt-1 text-sm text-slate-100">{activeSection}</p>
+                </div>
+                <span className="rounded-full bg-slate-950 px-3 py-1 text-xs uppercase tracking-[0.3em] text-slate-400">Section</span>
+              </div>
+              <div className="mt-4 text-sm text-slate-300">
+                {activeSection === "datasets" && (
+                  <div className="space-y-3">
+                    <p>Browse loaded datasets, preview file metadata, and switch active sources.</p>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                      {files.length ? (
+                        <div className="space-y-2">
+                          {files.map((file) => (
+                            <button
+                              key={file.id}
+                              onClick={() => setSelectedFileId(file.id)}
+                              className={cn(
+                                "w-full text-left rounded-xl px-3 py-2 text-sm transition-all",
+                                selectedFileId === file.id ? "bg-indigo-950 text-white" : "bg-slate-900 text-slate-300 hover:bg-slate-800"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span>{file.name}</span>
+                                <span className="text-xs text-slate-500">{file.metadata.rows} rows</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-slate-500">No datasets loaded yet. Upload or import a preview to get started.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {activeSection === "transformations" && (
+                  <div className="space-y-3">
+                    <p>Manage transformation rules and build a repeatable cleanup workflow.</p>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3 text-slate-300">
+                      <div className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-500">
+                        <div className="flex items-center justify-between">
+                          <span>Rules configured</span>
+                          <span>{transformations.length}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {transformations.map((trans) => (
+                            <div key={trans.id} className="rounded-xl bg-slate-900 p-2 text-sm text-slate-200">
+                              <div className="font-medium text-slate-100">{trans.operation.replace("_", " ")}</div>
+                              <div className="text-slate-400">Column: {trans.column || "unset"}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {activeSection === "history" && (
+                  <div className="space-y-3">
+                    <p>Review recent run history and transformation outcomes.</p>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                      {history.length ? (
+                        <div className="space-y-2 text-sm text-slate-300">
+                          {history.slice(0, 4).map((run) => (
+                            <div key={run.id} className="rounded-xl bg-slate-900 p-3">
+                              <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
+                                <span>{new Date(run.timestamp).toLocaleString()}</span>
+                                <span>{run.rowsRemoved} removed</span>
+                              </div>
+                              <div className="mt-2 text-slate-200">{run.fileName}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-slate-500">No history yet. Run the data cleaning workflow to capture history.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {activeSection === "insights" && (
+                  <div className="space-y-3">
+                    <p>View AI-generated data quality observations and source issues.</p>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3 space-y-2 text-sm text-slate-200">
+                      {insights.map((insight, index) => (
+                        <div key={index} className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                          {insight}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeSection === "export" && (
+                  <div className="space-y-3">
+                    <p>Prepare the final dataset for export and review output options.</p>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                      <div className="grid gap-3 text-sm text-slate-300">
+                        <div className="flex items-center justify-between rounded-xl bg-slate-900 p-3">
+                          <span>Download cleaned dataset</span>
+                          <button
+                            onClick={downloadCSV}
+                            disabled={!selectedFile}
+                            className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:bg-slate-800"
+                          >
+                            Export CSV
+                          </button>
+                        </div>
+                        <div className="rounded-xl bg-slate-900 p-3 text-slate-400">
+                          <p>Use the SQL workspace to validate the final query, then export the dataset.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_320px]">
@@ -728,15 +944,18 @@ export default function App() {
                   </div>
                   <div className="mt-4 grid gap-3">
                     {[
-                      "Upload",
-                      "Profile",
-                      "Transform",
-                      "Validate",
-                      "Export",
+                      { label: "Upload", status: sourceType === "upload" ? "active" : "pending" },
+                      { label: "Profile", status: selectedFile ? "active" : "pending" },
+                      { label: "Transform", status: transformations.length > 0 ? "active" : "pending" },
+                      { label: "Validate", status: selectedFile ? "active" : "pending" },
+                      { label: "Export", status: selectedFile ? "active" : "pending" },
                     ].map((step, index) => (
-                      <div key={step} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm text-slate-200">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800 text-cyan-300">{index + 1}</span>
-                        <span>{step}</span>
+                      <div key={step.label} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm text-slate-200">
+                        <span className={cn("inline-flex h-8 w-8 items-center justify-center rounded-xl text-sm font-semibold", step.status === "active" ? "bg-emerald-500 text-slate-950" : "bg-slate-800 text-slate-300")}>{index + 1}</span>
+                        <div>
+                          <div className="font-medium text-slate-100">{step.label}</div>
+                          <div className="text-xs text-slate-500">{step.status === "active" ? "Ready" : "Pending"}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
