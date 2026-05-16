@@ -40,11 +40,110 @@ export default function App() {
     duplicates: "keep",
   });
   const [isCleaning, setIsCleaning] = useState(false);
+  const [sourceType, setSourceType] = useState<"upload" | "db">("upload");
+  const [showConnectorModal, setShowConnectorModal] = useState(false);
 
   const selectedFile = useMemo(() => 
     files.find(f => f.id === selectedFileId), 
     [files, selectedFileId]
   );
+
+  const [dbConnector, setDbConnector] = useState("aws-redshift");
+  const [dbHost, setDbHost] = useState("");
+  const [dbPort, setDbPort] = useState("");
+  const [dbDatabase, setDbDatabase] = useState("");
+  const [dbSchema, setDbSchema] = useState("");
+  const [dbUser, setDbUser] = useState("");
+  const [dbPassword, setDbPassword] = useState("");
+  const [dbQuery, setDbQuery] = useState("SELECT * FROM table_name LIMIT 100");
+  const [dbPreview, setDbPreview] = useState<any[] | null>(null);
+  const [isDbLoading, setIsDbLoading] = useState(false);
+
+  const dbConnectors = useMemo(() => [
+    { id: "aws-redshift", label: "AWS Redshift" },
+    { id: "azure-synapse", label: "Azure Synapse" },
+    { id: "snowflake", label: "Snowflake" },
+    { id: "google-bigquery", label: "Google BigQuery" },
+    { id: "postgresql", label: "PostgreSQL" },
+    { id: "mysql", label: "MySQL" },
+    { id: "sql-server", label: "SQL Server" },
+    { id: "oracle", label: "Oracle" },
+    { id: "mongodb", label: "MongoDB" },
+    { id: "databricks", label: "Databricks" },
+  ], []);
+
+  const sourceOptions = useMemo(() => [
+    { id: "upload", label: "Upload Files" },
+    ...dbConnectors,
+  ], [dbConnectors]);
+
+  const currentSourceLabel = useMemo(() => {
+    const selected = sourceOptions.find(option => option.id === (sourceType === "upload" ? "upload" : dbConnector));
+    return selected?.label || "Upload Files";
+  }, [sourceOptions, sourceType, dbConnector]);
+
+  const handleSourceChange = useCallback((value: string) => {
+    if (value === "upload") {
+      setSourceType("upload");
+      setShowConnectorModal(false);
+    } else {
+      setSourceType("db");
+      setDbConnector(value);
+      setShowConnectorModal(true);
+    }
+  }, []);
+
+  const handleDbPreview = useCallback(async () => {
+    setIsDbLoading(true);
+    try {
+      const response = await fetch('/api/db/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connector: dbConnector,
+          host: dbHost,
+          port: dbPort,
+          database: dbDatabase,
+          schema: dbSchema,
+          user: dbUser,
+          password: dbPassword,
+          query: dbQuery,
+        }),
+      });
+      const result = await response.json();
+      setDbPreview(result.data || []);
+    } catch (err) {
+      console.error('Database preview failed', err);
+      setDbPreview([]);
+    } finally {
+      setIsDbLoading(false);
+    }
+  }, [dbConnector, dbHost, dbPort, dbDatabase, dbSchema, dbUser, dbPassword, dbQuery]);
+
+  const handleSourceSelectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    handleSourceChange(e.target.value);
+  };
+
+
+  const handleDbImport = () => {
+    if (!dbPreview || !dbPreview.length) return;
+    const metadata = calculateMetadata(dbPreview);
+    if (!metadata) return;
+
+    const fileId = Math.random().toString(36).substring(7);
+    const newFile = {
+      id: fileId,
+      name: `${dbConnector}-preview.csv`,
+      type: 'application/json',
+      data: dbPreview,
+      originalData: [...dbPreview],
+      metadata,
+    };
+
+    setFiles(prev => [...prev, newFile]);
+    setSelectedFileId(fileId);
+    setDbPreview(null);
+  };
 
   const calculateMetadata = (data: any[]) => {
     if (!data.length) return null;
@@ -357,49 +456,314 @@ export default function App() {
             <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
               <RefreshCw className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">CleanSheet</h1>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-slate-800">CleanSheet</h1>
+              <p className="text-sm text-slate-500">Selected source: {currentSourceLabel}</p>
+              <p className="text-xs text-slate-400 mt-1">Import local files or connect to databases, preview datasets, and clean them in one workflow.</p>
+            </div>
           </div>
-          
           <div className="flex items-center gap-4">
-            <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 shadow-sm">
-              <Upload className="w-4 h-4" />
-              Upload Files/Folder
-              <input 
-                type="file" 
-                multiple 
-                {...({ webkitdirectory: "", directory: "" } as any)}
-                className="hidden" 
-                onChange={handleFileUpload}
-                accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
-              />
-            </label>
+            <div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Source menu available below</div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {showConnectorModal && sourceType === "db" && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+            <div className="w-full max-w-2xl rounded-3xl bg-white border border-slate-200 shadow-2xl p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Next steps</p>
+                  <h2 className="mt-3 text-2xl font-bold text-slate-900">Set up {currentSourceLabel}</h2>
+                </div>
+                <button
+                  onClick={() => setShowConnectorModal(false)}
+                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="mt-6 space-y-4 text-sm text-slate-600">
+                <p>Follow these guided steps to import your dataset from the selected connector.</p>
+                <ol className="space-y-3 pl-5 list-decimal text-slate-600">
+                  <li><span className="font-semibold">Enter connection details</span> for {currentSourceLabel} in the form below.</li>
+                  <li><span className="font-semibold">Paste or update</span> the SQL query to fetch the data you need.</li>
+                  <li><span className="font-semibold">Preview query results</span> and then import the dataset for cleaning.</li>
+                </ol>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowConnectorModal(false)}
+                  className="rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                >
+                  Continue to connector
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Data source</p>
+              <h2 className="mt-3 text-2xl font-bold text-slate-900">Choose where your data comes from</h2>
+              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
+                Select either a local file upload or a database connector. The screen will update with the guided next step for your source.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-[280px_1fr] items-end">
+            <div className="grid gap-2">
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Data source</label>
+              <select
+                value={sourceType === "upload" ? "upload" : dbConnector}
+                onChange={handleSourceSelectionChange}
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {sourceOptions.map(option => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-3xl bg-slate-50 border border-slate-200 p-5 text-sm leading-6 text-slate-600">
+              {sourceType === "upload" ? (
+                <>
+                  Upload local CSV, Excel, JSON, or YAML files. The upload form will appear below once you select this source.
+                </>
+              ) : (
+                <>
+                  You selected <span className="font-semibold text-slate-900">{currentSourceLabel}</span>. Follow the popup steps to configure your connector, preview a query, and import the dataset.
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {sourceType === "upload" ? (
+          <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-10 text-center">
+            <div className="flex flex-col items-center justify-center gap-6">
+              <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center">
+                <FileSpreadsheet className="w-10 h-10 text-indigo-500" />
+              </div>
+              <div className="space-y-3 max-w-xl">
+                <h2 className="text-2xl font-semibold text-slate-800">Upload files locally</h2>
+                <p className="text-slate-500">Select or drag files to add them as datasets. Once uploaded, you can clean them using the same workflow.</p>
+              </div>
+              <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-2xl text-sm font-medium transition-all flex items-center gap-2 shadow-sm">
+                <Upload className="w-4 h-4" />
+                Upload Files / Folder
+                <input
+                  type="file"
+                  multiple
+                  {...({ webkitdirectory: "", directory: "" } as any)}
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
+                />
+              </label>
+            </div>
+          </section>
+        ) : (
+          <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Database Import</p>
+                <h2 className="mt-3 text-2xl font-bold text-slate-900">Configure your connector</h2>
+                <p className="mt-2 text-sm text-slate-500 max-w-2xl">
+                  Enter the connection details and SQL query for the selected source. A popup guides you through the next steps.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleDbPreview}
+                  disabled={isDbLoading}
+                  className={cn(
+                    "px-4 py-2 rounded-2xl font-semibold text-sm transition-all",
+                    isDbLoading
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  )}
+                >
+                  {isDbLoading ? 'Previewing…' : 'Preview Query'}
+                </button>
+                <button
+                  onClick={handleDbImport}
+                  disabled={!dbPreview?.length}
+                  className={cn(
+                    "px-4 py-2 rounded-2xl font-semibold text-sm transition-all",
+                    !dbPreview?.length
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  )}
+                >
+                  Import Preview
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 mt-6 lg:grid-cols-2">
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Connector</label>
+                <select
+                  value={dbConnector}
+                  onChange={(e) => {
+                    setDbConnector(e.target.value);
+                    setSourceType("db");
+                    setShowConnectorModal(true);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {dbConnectors.map(connector => (
+                    <option key={connector.id} value={connector.id}>{connector.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Host</label>
+                <input
+                  value={dbHost}
+                  onChange={(e) => setDbHost(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="db.example.com"
+                />
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+                <div className="grid gap-2">
+                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Port</label>
+                  <input
+                    value={dbPort}
+                    onChange={(e) => setDbPort(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="5439"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Database</label>
+                  <input
+                    value={dbDatabase}
+                    onChange={(e) => setDbDatabase(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="my_database"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-2 md:gap-4">
+                <div className="grid gap-2">
+                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Schema</label>
+                  <input
+                    value={dbSchema}
+                    onChange={(e) => setDbSchema(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="public"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label className="text-xs font-bold uppercase tracking-wide text-slate-500">User</label>
+                  <input
+                    value={dbUser}
+                    onChange={(e) => setDbUser(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="username"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Password</label>
+                <input
+                  type="password"
+                  value={dbPassword}
+                  onChange={(e) => setDbPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <label className="text-xs font-bold uppercase tracking-wide text-slate-500">SQL Query</label>
+                <textarea
+                  value={dbQuery}
+                  onChange={(e) => setDbQuery(e.target.value)}
+                  className="min-h-[180px] w-full bg-slate-50 border border-slate-200 rounded-3xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+
+              {dbPreview && dbPreview.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold text-slate-800">Preview loaded</p>
+                    <span className="text-xs uppercase tracking-[0.2em] text-slate-400">{dbPreview.length} rows</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left text-slate-600">
+                      <thead>
+                        <tr>
+                          {Object.keys(dbPreview[0]).map(col => (
+                            <th key={col} className="px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200">{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dbPreview.slice(0, 3).map((row, idx) => (
+                          <tr key={idx} className="odd:bg-white even:bg-slate-100">
+                            {Object.values(row).map((cell, index) => (
+                              <td key={index} className="px-3 py-2 whitespace-nowrap">{String(cell)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+        )}
+
         {!files.length ? (
           <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-slate-200 rounded-3xl bg-white/50">
             <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
               <FileSpreadsheet className="w-10 h-10 text-indigo-500" />
             </div>
-            <h2 className="text-2xl font-semibold text-slate-800 mb-2">No files uploaded yet</h2>
+            <h2 className="text-2xl font-semibold text-slate-800 mb-2">No dataset loaded yet</h2>
             <p className="text-slate-500 mb-8 max-w-md text-center">
-              Upload CSV, Excel, JSON or YAML files to start cleaning your data. 
-              You can select multiple files or drag them here.
+              {sourceType === "upload"
+                ? "Upload CSV, Excel, JSON or YAML files to start cleaning your data. You can select multiple files or drag them here."
+                : "Select a connector and preview a query to import a dataset. You can also switch back to Upload Files in the source dropdown above."
+              }
             </p>
-            <label className="cursor-pointer bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 px-8 py-3 rounded-2xl text-slate-700 font-medium transition-all flex items-center gap-3 shadow-sm group">
-              <Upload className="w-5 h-5 text-slate-400 group-hover:text-indigo-500" />
-              Choose Files or Folder
-              <input 
-                type="file" 
-                multiple 
-                {...({ webkitdirectory: "", directory: "" } as any)}
-                className="hidden" 
-                onChange={handleFileUpload}
-                accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
-              />
-            </label>
+            {sourceType === "upload" ? (
+              <label className="cursor-pointer bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 px-8 py-3 rounded-2xl text-slate-700 font-medium transition-all flex items-center gap-3 shadow-sm group">
+                <Upload className="w-5 h-5 text-slate-400 group-hover:text-indigo-500" />
+                Choose Files or Folder
+                <input 
+                  type="file" 
+                  multiple 
+                  {...({ webkitdirectory: "", directory: "" } as any)}
+                  className="hidden" 
+                  onChange={handleFileUpload}
+                  accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
+                />
+              </label>
+            ) : (
+              <button
+                onClick={() => setSourceType("upload")}
+                className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-sm font-semibold hover:bg-indigo-700 transition-all"
+              >
+                Switch to Upload Files
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

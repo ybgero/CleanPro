@@ -1,20 +1,33 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+<img width="1200" height="475" alt="CleanPro Data Cleaner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# CleanPro
 
-This contains everything you need to run your app locally.
+CleanPro is a modern data cleaning tool built with React and Vite. Import datasets from local files or connect to major database platforms, preview query results, and apply cleaning rules for nulls, blanks, zeros, and duplicates.
 
-View your app in AI Studio: https://ai.studio/apps/cf3dcfec-4fae-4511-a635-cece014b49d6
+## What this app does
 
-## Run Locally
+- Upload local datasets in CSV, Excel, JSON, or YAML format
+- Choose a database connector from a unified source selector
+- Preview query results before importing datasets
+- Clean data using configurable rules
+- Download cleaned CSV output
 
-**Prerequisites:**  Node.js
+## Run locally
 
+**Prerequisites:** Node.js
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Start the local backend connector mock server:
+   `npm run server`
+3. Start the frontend app:
    `npm run dev`
+
+Then open `http://localhost:3000` in your browser.
+
+## Notes
+
+- The app is already configured to use a local API proxy for connector preview requests.
+- You can switch between local file uploads and database connectors from the source dropdown.
