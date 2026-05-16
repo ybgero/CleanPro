@@ -12,6 +12,8 @@ import {
   FileSpreadsheet,
   Database,
   RefreshCw,
+  Moon,
+  Sun,
   X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -42,6 +44,16 @@ export default function App() {
   const [isCleaning, setIsCleaning] = useState(false);
   const [sourceType, setSourceType] = useState<"upload" | "db">("upload");
   const [showConnectorModal, setShowConnectorModal] = useState(false);
+  const [themeMode, setThemeMode] = useState<"dark" | "light">("dark");
+
+  const isDark = themeMode === "dark";
+
+  const themePanel = isDark ? "bg-slate-950 border-slate-800" : "bg-white border-slate-200";
+  const themePanelSoft = isDark ? "bg-slate-900 border-slate-800" : "bg-slate-50 border-slate-200";
+  const themeText = isDark ? "text-slate-100" : "text-slate-950";
+  const themeSubtle = isDark ? "text-slate-400" : "text-slate-600";
+  const themeSubtleStrong = isDark ? "text-slate-300" : "text-slate-700";
+  const themeInput = isDark ? "bg-slate-950 border-slate-800 text-slate-100" : "bg-slate-50 border-slate-200 text-slate-950";
 
   const selectedFile = useMemo(() => 
     files.find(f => f.id === selectedFileId), 
@@ -448,45 +460,77 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-indigo-100">
+    <div className={cn(
+      "min-h-screen font-sans",
+      isDark
+        ? "bg-slate-950 text-slate-100 selection:bg-slate-700/40"
+        : "bg-slate-50 text-slate-950 selection:bg-slate-200/80"
+    )}>
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <header className={cn(
+        "sticky top-4 z-50 backdrop-blur-sm py-4",
+        isDark
+          ? "border-b border-slate-800 bg-slate-950/98"
+          : "border-b border-slate-200 bg-white/95"
+      )}>
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+            <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center shadow-slate-900/30">
               <RefreshCw className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-800">CleanSheet</h1>
-              <p className="text-sm text-slate-500">Selected source: {currentSourceLabel}</p>
-              <p className="text-xs text-slate-400 mt-1">Import local files or connect to databases, preview datasets, and clean them in one workflow.</p>
+              <h1 className={cn("text-lg font-semibold tracking-tight", themeText)}>CleanSheet</h1>
+              <p className={cn("text-sm", themeSubtle)}>Selected source: {currentSourceLabel}</p>
+              <p className={cn("text-xs mt-1", isDark ? "text-slate-500" : "text-slate-600")}>Import local files or connect to databases, preview datasets, and clean them in one workflow.</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700">Source menu available below</div>
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "rounded-lg px-3 py-1.5 text-xs font-semibold",
+              isDark ? "bg-slate-900 text-slate-300" : "bg-slate-100 text-slate-700"
+            )}>Source menu available below</div>
+            <button
+              type="button"
+              onClick={() => setThemeMode(isDark ? "light" : "dark")}
+              className={cn(
+                "w-10 h-10 rounded-lg border transition-colors flex items-center justify-center",
+                isDark
+                  ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                  : "border-slate-200 bg-slate-100 text-slate-950 hover:bg-slate-200"
+              )}
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {showConnectorModal && sourceType === "db" && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-            <div className="w-full max-w-2xl rounded-3xl bg-white border border-slate-200 shadow-2xl p-6">
+          <div className={cn(
+            "fixed inset-0 z-50 flex items-center justify-center p-4",
+            isDark ? "bg-slate-900/60" : "bg-slate-200/60"
+          )}>
+            <div className={cn(
+              "w-full max-w-2xl rounded-xl shadow-2xl p-6",
+              themePanel
+            )}>
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Next steps</p>
-                  <h2 className="mt-3 text-2xl font-bold text-slate-900">Set up {currentSourceLabel}</h2>
+                  <p className="text-sm font-semibold text-indigo-400 uppercase tracking-[0.3em]">Next steps</p>
+                  <h2 className={cn("mt-3 text-2xl font-bold", themeText)}>Set up {currentSourceLabel}</h2>
                 </div>
                 <button
                   onClick={() => setShowConnectorModal(false)}
-                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-300"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="mt-6 space-y-4 text-sm text-slate-600">
+              <div className="mt-6 space-y-4 text-sm text-slate-400">
                 <p>Follow these guided steps to import your dataset from the selected connector.</p>
-                <ol className="space-y-3 pl-5 list-decimal text-slate-600">
+                <ol className="space-y-3 pl-5 list-decimal text-slate-400">
                   <li><span className="font-semibold">Enter connection details</span> for {currentSourceLabel} in the form below.</li>
                   <li><span className="font-semibold">Paste or update</span> the SQL query to fetch the data you need.</li>
                   <li><span className="font-semibold">Preview query results</span> and then import the dataset for cleaning.</li>
@@ -495,7 +539,7 @@ export default function App() {
               <div className="mt-6 flex justify-end">
                 <button
                   onClick={() => setShowConnectorModal(false)}
-                  className="rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                  className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
                 >
                   Continue to connector
                 </button>
@@ -504,12 +548,12 @@ export default function App() {
           </div>
         )}
 
-        <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+        <section className={cn("mb-8 rounded-xl shadow-none p-5", themePanel)}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Data source</p>
-              <h2 className="mt-3 text-2xl font-bold text-slate-900">Choose where your data comes from</h2>
-              <p className="mt-2 text-sm text-slate-500 max-w-2xl">
+              <h2 className={cn("mt-3 text-2xl font-bold", themeText)}>Choose where your data comes from</h2>
+              <p className={cn("mt-2 text-sm max-w-2xl", themeSubtle)}>
                 Select either a local file upload or a database connector. The screen will update with the guided next step for your source.
               </p>
             </div>
@@ -521,7 +565,10 @@ export default function App() {
               <select
                 value={sourceType === "upload" ? "upload" : dbConnector}
                 onChange={handleSourceSelectionChange}
-                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                className={cn(
+                  "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                  themeInput
+                )}
               >
                 {sourceOptions.map(option => (
                   <option key={option.id} value={option.id}>{option.label}</option>
@@ -529,14 +576,18 @@ export default function App() {
               </select>
             </div>
 
-            <div className="rounded-3xl bg-slate-50 border border-slate-200 p-5 text-sm leading-6 text-slate-600">
+            <div className={cn(
+              "rounded-xl p-4 text-sm leading-6",
+              themePanelSoft,
+              isDark ? "text-slate-400" : "text-slate-600"
+            )}>
               {sourceType === "upload" ? (
                 <>
                   Upload local CSV, Excel, JSON, or YAML files. The upload form will appear below once you select this source.
                 </>
               ) : (
                 <>
-                  You selected <span className="font-semibold text-slate-900">{currentSourceLabel}</span>. Follow the popup steps to configure your connector, preview a query, and import the dataset.
+                  You selected <span className={cn("font-semibold", isDark ? "text-cyan-300" : "text-sky-700")}>{currentSourceLabel}</span>. Follow the popup steps to configure your connector, preview a query, and import the dataset.
                 </>
               )}
             </div>
@@ -544,16 +595,16 @@ export default function App() {
         </section>
 
         {sourceType === "upload" ? (
-          <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-10 text-center">
+          <section className={cn("mb-8 rounded-xl shadow-none p-6 text-center", themePanel)}>
             <div className="flex flex-col items-center justify-center gap-6">
               <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center">
                 <FileSpreadsheet className="w-10 h-10 text-indigo-500" />
               </div>
               <div className="space-y-3 max-w-xl">
-                <h2 className="text-2xl font-semibold text-slate-800">Upload files locally</h2>
-                <p className="text-slate-500">Select or drag files to add them as datasets. Once uploaded, you can clean them using the same workflow.</p>
+                <h2 className={cn("text-2xl font-semibold", themeText)}>Upload files locally</h2>
+                <p className={cn("", themeSubtle)}>Select or drag files to add them as datasets. Once uploaded, you can clean them using the same workflow.</p>
               </div>
-              <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-2xl text-sm font-medium transition-all flex items-center gap-2 shadow-sm">
+              <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2">
                 <Upload className="w-4 h-4" />
                 Upload Files / Folder
                 <input
@@ -568,12 +619,12 @@ export default function App() {
             </div>
           </section>
         ) : (
-          <section className="mb-8 bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+          <section className={cn("mb-8 rounded-xl shadow-none p-5", themePanel)}>
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-sm font-semibold text-indigo-600 uppercase tracking-[0.3em]">Database Import</p>
-                <h2 className="mt-3 text-2xl font-bold text-slate-900">Configure your connector</h2>
-                <p className="mt-2 text-sm text-slate-500 max-w-2xl">
+                <p className="text-sm font-semibold text-cyan-300 uppercase tracking-[0.3em]">Database Import</p>
+                <h2 className={cn("mt-3 text-2xl font-bold", themeText)}>Configure your connector</h2>
+                <p className={cn("mt-2 text-sm max-w-2xl", themeSubtle)}>
                   Enter the connection details and SQL query for the selected source. A popup guides you through the next steps.
                 </p>
               </div>
@@ -582,9 +633,9 @@ export default function App() {
                   onClick={handleDbPreview}
                   disabled={isDbLoading}
                   className={cn(
-                    "px-4 py-2 rounded-2xl font-semibold text-sm transition-all",
+                    "px-4 py-2 rounded-lg font-semibold text-sm transition-all",
                     isDbLoading
-                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      ? "bg-slate-900 text-slate-500 cursor-not-allowed"
                       : "bg-indigo-600 text-white hover:bg-indigo-700"
                   )}
                 >
@@ -594,9 +645,9 @@ export default function App() {
                   onClick={handleDbImport}
                   disabled={!dbPreview?.length}
                   className={cn(
-                    "px-4 py-2 rounded-2xl font-semibold text-sm transition-all",
+                    "px-4 py-2 rounded-lg font-semibold text-sm transition-all",
                     !dbPreview?.length
-                      ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      ? "bg-slate-900 text-slate-500 cursor-not-allowed"
                       : "bg-emerald-600 text-white hover:bg-emerald-700"
                   )}
                 >
@@ -616,7 +667,10 @@ export default function App() {
                     setSourceType("db");
                     setShowConnectorModal(true);
                   }}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={cn(
+                    "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                    themeInput
+                  )}
                 >
                   {dbConnectors.map(connector => (
                     <option key={connector.id} value={connector.id}>{connector.label}</option>
@@ -629,7 +683,10 @@ export default function App() {
                 <input
                   value={dbHost}
                   onChange={(e) => setDbHost(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={cn(
+                    "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                    themeInput
+                  )}
                   placeholder="db.example.com"
                 />
               </div>
@@ -640,7 +697,10 @@ export default function App() {
                   <input
                     value={dbPort}
                     onChange={(e) => setDbPort(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={cn(
+                      "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                      themeInput
+                    )}
                     placeholder="5439"
                   />
                 </div>
@@ -649,7 +709,10 @@ export default function App() {
                   <input
                     value={dbDatabase}
                     onChange={(e) => setDbDatabase(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={cn(
+                      "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                      themeInput
+                    )}
                     placeholder="my_database"
                   />
                 </div>
@@ -661,7 +724,10 @@ export default function App() {
                   <input
                     value={dbSchema}
                     onChange={(e) => setDbSchema(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={cn(
+                      "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                      themeInput
+                    )}
                     placeholder="public"
                   />
                 </div>
@@ -670,7 +736,10 @@ export default function App() {
                   <input
                     value={dbUser}
                     onChange={(e) => setDbUser(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                    className={cn(
+                      "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                      themeInput
+                    )}
                     placeholder="username"
                   />
                 </div>
@@ -682,7 +751,10 @@ export default function App() {
                   type="password"
                   value={dbPassword}
                   onChange={(e) => setDbPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={cn(
+                    "w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500",
+                    themeInput
+                  )}
                   placeholder="••••••••"
                 />
               </div>
@@ -694,30 +766,33 @@ export default function App() {
                 <textarea
                   value={dbQuery}
                   onChange={(e) => setDbQuery(e.target.value)}
-                  className="min-h-[180px] w-full bg-slate-50 border border-slate-200 rounded-3xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className={cn(
+                    "min-h-[180px] w-full rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 resize-none",
+                    themeInput
+                  )}
                 />
               </div>
 
               {dbPreview && dbPreview.length > 0 && (
-                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-4">
+                <div className={cn("rounded-xl p-4", themePanel)}>
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-slate-800">Preview loaded</p>
+                    <p className="text-sm font-semibold text-slate-100">Preview loaded</p>
                     <span className="text-xs uppercase tracking-[0.2em] text-slate-400">{dbPreview.length} rows</span>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-600">
+                    <table className="w-full text-sm text-left text-slate-400">
                       <thead>
                         <tr>
                           {Object.keys(dbPreview[0]).map(col => (
-                            <th key={col} className="px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200">{col}</th>
+                            <th key={col} className="px-3 py-2 font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-800">{col}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {dbPreview.slice(0, 3).map((row, idx) => (
-                          <tr key={idx} className="odd:bg-white even:bg-slate-100">
+                          <tr key={idx} className="odd:bg-slate-900 even:bg-slate-950">
                             {Object.values(row).map((cell, index) => (
-                              <td key={index} className="px-3 py-2 whitespace-nowrap">{String(cell)}</td>
+                              <td key={index} className="px-3 py-2 whitespace-nowrap text-slate-300">{String(cell)}</td>
                             ))}
                           </tr>
                         ))}
@@ -732,19 +807,27 @@ export default function App() {
         )}
 
         {!files.length ? (
-          <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-slate-200 rounded-3xl bg-white/50">
-            <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
+          <div className={cn(
+          "flex flex-col items-center justify-center py-12 border-dashed rounded-xl",
+          isDark ? "border border-slate-700 bg-slate-900/70" : "border border-slate-200 bg-slate-50/70"
+        )}>
+            <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-6">
               <FileSpreadsheet className="w-10 h-10 text-indigo-500" />
             </div>
-            <h2 className="text-2xl font-semibold text-slate-800 mb-2">No dataset loaded yet</h2>
-            <p className="text-slate-500 mb-8 max-w-md text-center">
+            <h2 className={cn("text-xl font-semibold mb-2", themeText)}>No dataset loaded yet</h2>
+            <p className={cn("mb-6 max-w-md text-center", themeSubtle)}>
               {sourceType === "upload"
                 ? "Upload CSV, Excel, JSON or YAML files to start cleaning your data. You can select multiple files or drag them here."
                 : "Select a connector and preview a query to import a dataset. You can also switch back to Upload Files in the source dropdown above."
               }
             </p>
             {sourceType === "upload" ? (
-              <label className="cursor-pointer bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 px-8 py-3 rounded-2xl text-slate-700 font-medium transition-all flex items-center gap-3 shadow-sm group">
+              <label className={cn(
+                "cursor-pointer px-6 py-2 rounded-lg font-medium transition-all flex items-center gap-3 group",
+                isDark
+                  ? "bg-slate-900 border border-slate-800 hover:border-indigo-500 hover:bg-slate-800 text-slate-300"
+                  : "bg-slate-100 border border-slate-200 hover:border-indigo-500 hover:bg-slate-200 text-slate-950"
+              )}>
                 <Upload className="w-5 h-5 text-slate-400 group-hover:text-indigo-500" />
                 Choose Files or Folder
                 <input 
@@ -759,18 +842,18 @@ export default function App() {
             ) : (
               <button
                 onClick={() => setSourceType("upload")}
-                className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-sm font-semibold hover:bg-indigo-700 transition-all"
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-500 transition-all"
               >
                 Switch to Upload Files
               </button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             {/* Sidebar: File List & Config */}
             <div className="lg:col-span-4 space-y-6">
               {/* File Selector */}
-              <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <section className="bg-slate-950 rounded-lg border border-slate-800 p-4 shadow-none">
                 <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <Database className="w-4 h-4" />
                   Your Datasets
@@ -783,8 +866,8 @@ export default function App() {
                       className={cn(
                         "w-full flex items-center justify-between p-3 rounded-xl transition-all group",
                         selectedFileId === file.id 
-                          ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200" 
-                          : "hover:bg-slate-50 text-slate-600"
+                          ? "bg-slate-900 text-indigo-200 ring-1 ring-slate-700" 
+                          : "hover:bg-slate-900 text-slate-300"
                       )}
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
@@ -807,7 +890,7 @@ export default function App() {
               </section>
 
               {/* Cleaning Options */}
-              <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <section className="bg-slate-950 rounded-lg border border-slate-800 p-4 shadow-none">
                 <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
                   <Settings2 className="w-4 h-4" />
                   Cleaning Rules
@@ -819,7 +902,7 @@ export default function App() {
                     <select 
                       value={config.nulls}
                       onChange={(e) => setConfig(prev => ({ ...prev, nulls: e.target.value as NullOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                       <option value="leave">Leave unchanged</option>
                       <option value="drop">Drop rows with NULLs</option>
@@ -834,7 +917,7 @@ export default function App() {
                     <select 
                       value={config.blanks}
                       onChange={(e) => setConfig(prev => ({ ...prev, blanks: e.target.value as BlankOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                       <option value="leave">Leave unchanged</option>
                       <option value="toNull">Convert to NULL</option>
@@ -847,7 +930,7 @@ export default function App() {
                     <select 
                       value={config.zeros}
                       onChange={(e) => setConfig(prev => ({ ...prev, zeros: e.target.value as ZeroOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                       <option value="leave">Leave unchanged</option>
                       <option value="toNull">Convert to NULL</option>
@@ -861,7 +944,7 @@ export default function App() {
                     <select 
                       value={config.duplicates}
                       onChange={(e) => setConfig(prev => ({ ...prev, duplicates: e.target.value as DuplicateOption }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                       <option value="keep">Keep duplicates</option>
                       <option value="remove">Remove duplicates</option>
@@ -874,8 +957,8 @@ export default function App() {
                     className={cn(
                       "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg",
                       isCleaning 
-                        ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
-                        : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 active:scale-[0.98]"
+                        ? "bg-slate-900 text-slate-500 cursor-not-allowed" 
+                        : "bg-indigo-600 hover:bg-indigo-500 text-white active:scale-[0.98]"
                     )}
                   >
                     {isCleaning ? (
@@ -894,7 +977,7 @@ export default function App() {
               </section>
 
               {/* History */}
-              <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <section className="bg-slate-950 rounded-lg border border-slate-800 p-4 shadow-none">
                 <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                   <History className="w-4 h-4" />
                   Run History
@@ -904,12 +987,12 @@ export default function App() {
                     <p className="text-xs text-slate-400 text-center py-4 italic">No cleaning runs yet</p>
                   ) : (
                     history.map(run => (
-                      <div key={run.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                      <div key={run.id} className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">{new Date(run.timestamp).toLocaleTimeString()}</span>
-                          <span className="text-[10px] font-bold bg-red-50 text-red-600 px-1.5 py-0.5 rounded">-{run.rowsRemoved} rows</span>
+                          <span className="text-[10px] font-bold bg-red-900 text-red-300 px-1.5 py-0.5 rounded">-{run.rowsRemoved} rows</span>
                         </div>
-                        <p className="text-xs font-semibold text-slate-700 truncate">{run.fileName}</p>
+                        <p className="text-xs font-semibold text-slate-300 truncate">{run.fileName}</p>
                         <ul className="text-[10px] text-slate-500 space-y-1 pl-2 border-l border-slate-200">
                           {run.changes.slice(0, 2).map((c, idx) => (
                             <li key={idx} className="truncate">• {c}</li>
@@ -928,40 +1011,40 @@ export default function App() {
               {selectedFile ? (
                 <>
                   {/* Stats Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 shadow-none">
                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Rows</p>
-                      <p className="text-2xl font-bold text-slate-800">{selectedFile.metadata.rows.toLocaleString()}</p>
+                      <p className="text-2xl font-bold text-slate-100">{selectedFile.metadata.rows.toLocaleString()}</p>
                     </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 shadow-none">
                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Columns</p>
-                      <p className="text-2xl font-bold text-slate-800">{selectedFile.metadata.cols}</p>
+                      <p className="text-2xl font-bold text-slate-100">{selectedFile.metadata.cols}</p>
                     </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 shadow-none">
                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Null Values</p>
                       <p className="text-2xl font-bold text-indigo-600">
                         {((selectedFile.metadata.nullCount / (selectedFile.metadata.rows * selectedFile.metadata.cols)) * 100).toFixed(1)}%
                       </p>
                     </div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 shadow-none">
                       <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Unique Rows</p>
-                      <p className="text-2xl font-bold text-slate-800">
+                      <p className="text-2xl font-bold text-slate-100">
                         {((selectedFile.metadata.uniqueCount / selectedFile.metadata.rows) * 100).toFixed(0)}%
                       </p>
                     </div>
                   </div>
 
                   {/* Data Preview */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <div className="bg-slate-950 rounded-lg border border-slate-800 overflow-hidden flex flex-col shadow-none">
+                    <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900">
                       <div className="flex items-center gap-3">
-                        <h2 className="font-bold text-slate-800">Data Preview</h2>
-                        <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold uppercase">Showing first 100 rows</span>
+                        <h2 className="font-bold text-slate-100">Data Preview</h2>
+                        <span className="text-[10px] bg-slate-200 text-slate-400 px-2 py-0.5 rounded-full font-bold uppercase">Showing first 100 rows</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={resetFile}
-                          className="text-slate-400 hover:text-red-500 text-sm font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-all"
+                          className="text-slate-400 hover:text-red-300 text-sm font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-all"
                         >
                           <RefreshCw className="w-4 h-4" />
                           Reset
@@ -978,16 +1061,16 @@ export default function App() {
                     
                     <div className="overflow-x-auto overflow-y-auto max-h-[600px] custom-scrollbar">
                       <table className="w-full text-left border-collapse">
-                        <thead className="sticky top-0 z-10 bg-white shadow-sm">
+                        <thead className="sticky top-0 z-10 bg-slate-950 shadow-none">
                           <tr>
                             {Object.keys(selectedFile.data[0] || {}).map(col => (
-                              <th key={col} className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 min-w-[150px]">
+                              <th key={col} className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 min-w-[150px]">
                                 <div className="flex flex-col gap-1">
                                   <span>{col}</span>
                                   <div className="flex items-center gap-2">
                                     <span className={cn(
                                       "text-[8px] px-1.5 py-0.5 rounded-sm",
-                                      selectedFile.metadata.columnStats[col].type === "numeric" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
+                                      selectedFile.metadata.columnStats[col].type === "numeric" ? "bg-blue-900 text-blue-300" : "bg-amber-900 text-amber-300"
                                     )}>
                                       {selectedFile.metadata.columnStats[col].type}
                                     </span>
@@ -1000,11 +1083,11 @@ export default function App() {
                             ))}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50">
+                        <tbody className="divide-y divide-slate-800">
                           {selectedFile.data.slice(0, 100).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                            <tr key={idx} className="hover:bg-slate-900 transition-colors">
                               {Object.values(row).map((val: any, vIdx) => (
-                                <td key={vIdx} className="px-6 py-3.5 text-sm text-slate-600 whitespace-nowrap">
+                                <td key={vIdx} className="px-3 py-2 text-sm text-slate-300 whitespace-nowrap">
                                   {val === null || val === undefined || val === "" ? (
                                     <span className="text-slate-300 italic text-xs">null</span>
                                   ) : (
@@ -1020,7 +1103,7 @@ export default function App() {
                   </div>
                 </>
               ) : (
-                <div className="h-full flex items-center justify-center bg-white rounded-2xl border border-slate-200 border-dashed p-12">
+                <div className="h-full flex items-center justify-center bg-slate-900 rounded-xl border border-slate-800 border-dashed p-10">
                   <div className="text-center">
                     <AlertCircle className="w-12 h-12 text-slate-200 mx-auto mb-4" />
                     <p className="text-slate-400 font-medium">Select a file to view details</p>
@@ -1041,11 +1124,11 @@ export default function App() {
           background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
+          background: rgba(148, 163, 184, 0.35);
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #cbd5e1;
+          background: rgba(148, 163, 184, 0.55);
         }
       `}} />
     </div>
