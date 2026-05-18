@@ -633,11 +633,10 @@ export default function App() {
               </div>
               <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2">
                 <Upload className="w-4 h-4" />
-                Upload Files / Folder
+                Upload Files
                 <input
                   type="file"
                   multiple
-                  {...({ webkitdirectory: "", directory: "" } as any)}
                   className="hidden"
                   onChange={handleFileUpload}
                   accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
@@ -856,11 +855,10 @@ export default function App() {
                   : "bg-slate-100 border border-slate-200 hover:border-indigo-500 hover:bg-slate-200 text-slate-950"
               )}>
                 <Upload className="w-5 h-5 text-slate-400 group-hover:text-indigo-500" />
-                Choose Files or Folder
+                Choose Files
                 <input 
                   type="file" 
                   multiple 
-                  {...({ webkitdirectory: "", directory: "" } as any)}
                   className="hidden" 
                   onChange={handleFileUpload}
                   accept=".csv,.xlsx,.xls,.json,.yaml,.yml"
